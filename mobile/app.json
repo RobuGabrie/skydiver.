@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Skydiver",
+    "slug": "skydiver-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.skydiver.monitor"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-router",
+        {
+          "origin": "https://skydiver.monitor"
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to your SkyWatch device"
+        }
+      ]
+    ],
+    "scheme": "skydiver",
+    "extra": {
+      "router": {
+        "origin": "https://skydiver.monitor"
+      },
+      "eas": {
+        "projectId": "9d09443e-f926-483e-a13a-62c8ebe71afe"
+      }
+    }
+  }
+}
