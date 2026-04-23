@@ -74,6 +74,23 @@ export interface SlowTelemetryData {
   verticalSpeed?: number
   status?: SkydiverStatus
   position?: BodyPosition
+  // Phone GPS
+  phoneLat?: number
+  phoneLon?: number
+  phoneAltitude?: number
+  phoneAltitudeAccuracy?: number
+  phoneLocationAccuracy?: number
+  // IMU snapshot from latest fast packet
+  rollDeg?: number
+  pitchDeg?: number
+  yawDeg?: number
+  accelX?: number
+  accelY?: number
+  accelZ?: number
+  gyroX?: number
+  gyroY?: number
+  gyroZ?: number
+  stationary?: number
 }
 
 export interface AlertData {

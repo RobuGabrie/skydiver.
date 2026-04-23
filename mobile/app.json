@@ -30,16 +30,25 @@
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "plugins": [
-      "expo-router",
-      "expo-font",
       [
         "expo-router",
         {
           "origin": "https://skydiver.monitor"
+        }
+      ],
+      "expo-font",
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Skydiver to track your location and altitude during jumps."
         }
       ],
       [

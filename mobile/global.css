@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Skydiver dark theme — OLED-first */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 240 3.7% 11%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 3.7% 11%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3.7% 17%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 240 3.7% 17%;
+    --muted-foreground: 240 5% 55%;
+    --accent: 211 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 3.1 100% 59.8%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 3.7% 20%;
+    --input: 240 3.7% 20%;
+    --ring: 211 100% 50%;
+    --radius: 0.75rem;
+  }
+}

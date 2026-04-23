@@ -1,50 +1,126 @@
-import React, { useMemo } from 'react'
-import { View, Text, ScrollView, StyleSheet } from 'react-native'
+import React, { useMemo, useRef, useState, useEffect } from 'react'
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+} from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { useSimulation } from '../../hooks/useSimulation'
-import { useConnectivity } from '../../hooks/useConnectivity'
+import { MotiView, AnimatePresence } from 'moti'
 import { useBle } from '../../lib/BleContext'
+import { useConnectivity } from '../../hooks/useConnectivity'
 import { useTheme } from '../../lib/ThemeContext'
+import { usePhoneLocation } from '../../hooks/usePhoneLocation'
 import { ConnectionBadge } from '../../components/ConnectionBadge'
-import { MetricCard } from '../../components/MetricCard'
-import { AlertBanner } from '../../components/AlertBanner'
 import { SparkLine } from '../../components/SparkLine'
-import { AppColors, Typography, Spacing, Radius, TouchTarget } from '../../lib/theme'
-import { formatDuration, formatTime } from '../../lib/timeUtils'
+import { Badge } from '~/components/ui/badge'
+import { Text as UIText } from '~/components/ui/text'
+import { Progress } from '~/components/ui/progress'
+import { AppColors, Typography, Spacing, Radius } from '../../lib/theme'
+import { formatDuration } from '../../lib/timeUtils'
+import type { VitalPoint, SkydiverStatus } from '../../lib/types'
 
-const STATUS_KEYS = {
-  freefall:    { label: 'Freefall',    colorKey: 'primary' as const,  icon: 'arrow-down' as const },
-  canopy_open: { label: 'Canopy Open', colorKey: 'success' as const,  icon: 'checkmark-circle' as const },
-  landed:      { label: 'Landed',      colorKey: 'textMuted' as const, icon: 'location' as const },
-  standby:     { label: 'Standby',     colorKey: 'textMuted' as const, icon: 'time' as const },
-  alert:       { label: 'ALERT',       colorKey: 'danger' as const,    icon: 'alert-circle' as const },
+const MAX_HIST = 40
+
+function pushPoint(arr: VitalPoint[], value: number): VitalPoint[] {
+  return [...arr.slice(-(MAX_HIST - 1)), { time: Date.now(), value }]
+}
+
+function deriveStatus(
+  vSpeed: number,
+  altitude: number | null,
+  stationary: number,
+): SkydiverStatus {
+  if (stationary === 1) {
+    return altitude !== null && altitude > 200 ? 'standby' : 'landed'
+  }
+  if (vSpeed < -15) return 'freefall'
+  if (vSpeed < -2) return 'canopy_open'
+  if (altitude !== null && altitude < 30) return 'landed'
+  return 'standby'
+}
+
+type BadgeVariant = 'default' | 'success' | 'secondary' | 'destructive'
+
+const STATUS_CFG: Record<SkydiverStatus, { label: string; color: string; variant: BadgeVariant; pulse: boolean }> = {
+  freefall:    { label: 'FREEFALL',    color: '#007AFF', variant: 'default',     pulse: true },
+  canopy_open: { label: 'CANOPY OPEN', color: '#34C759', variant: 'success',     pulse: true },
+  landed:      { label: 'LANDED',      color: '#8E8E93', variant: 'secondary',   pulse: false },
+  standby:     { label: 'STANDBY',     color: '#8E8E93', variant: 'secondary',   pulse: false },
+  alert:       { label: 'ALERT',       color: '#FF3B30', variant: 'destructive', pulse: true },
 }
 
 export default function DashboardScreen() {
   const { colors } = useTheme()
-  const { data: simData, activeAlerts, dismissAlert } = useSimulation()
   const { mode, bleConnected, deviceRssi } = useConnectivity()
-  const { slowPacket } = useBle()
+  const { slowPacket, fastPacket, connectedId, updatePhoneLocation } = useBle()
+  const { location } = usePhoneLocation(true)
+  const { width: screenWidth } = useWindowDimensions()
   const styles = useMemo(() => makeStyles(colors), [colors])
 
-  // Prefer live BLE vitals; fall back to simulation when not connected
-  const data = useMemo(() => {
-    if (!slowPacket) return simData
-    return {
-      ...simData,
-      heartRate:   Math.round(slowPacket.bpm),
-      oxygen:      Math.round(slowPacket.spo2),
-      stress:      Math.round(slowPacket.stressPct),
-      temperature: slowPacket.tempC,
-      battery:     Math.round(slowPacket.battPct),
-      lastUpdate:  Date.now(),
-    }
-  }, [simData, slowPacket])
+  const hrHist = useRef<VitalPoint[]>([])
+  const o2Hist = useRef<VitalPoint[]>([])
+  const altHist = useRef<VitalPoint[]>([])
+  const [, forceUpdate] = useState(false)
 
-  const statusCfg = STATUS_KEYS[data.status]
-  const statusColor = colors[statusCfg.colorKey]
-  const jumpDuration = Date.now() - data.sessionStarted
+  const sessionStart = useRef(Date.now())
+  const prevConnected = useRef<string | null>(null)
+
+  const prevAlt = useRef<number | null>(null)
+  const prevAltTime = useRef(Date.now())
+  const [vertSpeed, setVertSpeed] = useState(0)
+
+  useEffect(() => {
+    if (connectedId && connectedId !== prevConnected.current) {
+      sessionStart.current = Date.now()
+      hrHist.current = []
+      o2Hist.current = []
+    }
+    prevConnected.current = connectedId
+  }, [connectedId])
+
+  useEffect(() => {
+    if (!slowPacket) return
+    hrHist.current = pushPoint(hrHist.current, slowPacket.bpm)
+    o2Hist.current = pushPoint(o2Hist.current, slowPacket.spo2)
+    forceUpdate(v => !v)
+  }, [slowPacket])
+
+  useEffect(() => {
+    if (!location) return
+
+    updatePhoneLocation({
+      lat: location.latitude,
+      lon: location.longitude,
+      altitude: location.altitude,
+      accuracy: location.accuracy,
+    })
+
+    const alt = location.altitude
+    if (alt !== null) {
+      const now = Date.now()
+      if (prevAlt.current !== null) {
+        const dt = (now - prevAltTime.current) / 1000
+        if (dt > 0.1) {
+          setVertSpeed((alt - prevAlt.current) / dt)
+        }
+      }
+      prevAlt.current = alt
+      prevAltTime.current = now
+      altHist.current = pushPoint(altHist.current, alt)
+      forceUpdate(v => !v)
+    }
+  }, [location, updatePhoneLocation])
+
+  const isConnected = connectedId !== null
+  const altitude = location?.altitude ?? null
+  const status = deriveStatus(vertSpeed, altitude, fastPacket?.stationary ?? 1)
+  const statusCfg = STATUS_CFG[status]
+
+  const cardInner = screenWidth - Spacing.md * 2 - Spacing.md * 2
+  const halfCardInner = (screenWidth - Spacing.md * 2 - Spacing.md * 2) / 2 - Spacing.sm
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -53,124 +129,365 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
+        {/* ── Header ──────────────────────────────────── */}
+        <MotiView
+          from={{ opacity: 0, translateY: -6 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'timing', duration: 260 }}
+          style={styles.header}
+        >
           <View>
             <Text style={styles.appTitle}>SKYDIVER</Text>
-            <Text style={styles.subTitle}>Jump #{data.jumpNumber}</Text>
+            <Text style={styles.subTitle}>
+              {isConnected ? 'Device connected' : 'No device'}
+            </Text>
           </View>
           <ConnectionBadge mode={mode} bleConnected={bleConnected} deviceRssi={deviceRssi} />
-        </View>
+        </MotiView>
 
-        <Text style={styles.updateTime}>Updated {formatTime(data.lastUpdate)}</Text>
-
-        {/* Alerts */}
-        {activeAlerts.length > 0 && (
-          <View style={styles.section}>
-            {activeAlerts.slice(0, 3).map(alert => (
-              <AlertBanner key={alert.id} alert={alert} onDismiss={dismissAlert} />
-            ))}
-          </View>
-        )}
-
-        {/* Status hero card — clean, no gradient */}
-        <View style={[styles.heroCard, { borderColor: statusColor + '50' }]}>
+        {/* ── Altitude + status hero ───────────────────── */}
+        <MotiView
+          from={{ opacity: 0, translateY: 14 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 100, delay: 60 }}
+          style={styles.heroCard}
+        >
           <View style={styles.heroTop}>
-            <View style={[styles.statusPill, { borderColor: statusColor + '40' }]}>
-              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-              <Text style={[styles.statusLabel, { color: statusColor }]}>{statusCfg.label}</Text>
-            </View>
-            <Text style={styles.jumpTimer}>{formatDuration(jumpDuration)}</Text>
+            <Badge variant={statusCfg.variant} className="flex-row items-center gap-1.5">
+              <MotiView
+                from={{ opacity: 1, scale: 1 }}
+                animate={statusCfg.pulse ? { opacity: 0.2, scale: 1.6 } : { opacity: 1, scale: 1 }}
+                transition={
+                  statusCfg.pulse
+                    ? { type: 'timing', duration: 850, loop: true, repeatReverse: true }
+                    : { type: 'timing', duration: 200 }
+                }
+                style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: statusCfg.color }}
+              />
+              <UIText className="text-xs font-bold tracking-widest" style={{ color: statusCfg.color }}>
+                {statusCfg.label}
+              </UIText>
+            </Badge>
+            <Text style={styles.sessionTimer}>
+              {formatDuration(Date.now() - sessionStart.current)}
+            </Text>
           </View>
 
-          <View style={styles.altitudeRow}>
-            <Text style={[styles.altitudeValue, { color: statusColor }]}>
-              {data.altitude.toLocaleString()}
+          <View style={styles.altRow}>
+            <Text style={styles.altValue}>
+              {altitude !== null ? Math.round(altitude).toLocaleString() : '—'}
             </Text>
-            <Text style={styles.altitudeUnit}>m</Text>
+            <Text style={styles.altUnit}>m</Text>
           </View>
 
           <View style={styles.heroMeta}>
-            <View style={styles.metaItem}>
-              <Ionicons name="arrow-down" size={13} color={colors.textMuted} />
-              <Text style={styles.metaText}>{Math.abs(data.verticalSpeed).toFixed(1)} m/s</Text>
+            <View style={styles.metaChip}>
+              <Ionicons name="arrow-down" size={11} color={colors.textMuted} />
+              <Text style={styles.metaText}>{Math.abs(vertSpeed).toFixed(1)} m/s</Text>
             </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="body" size={13} color={colors.textMuted} />
-              <Text style={styles.metaText}>{data.position}</Text>
-            </View>
-            {data.parachuteOpen && (
-              <View style={styles.metaItem}>
-                <Ionicons name="checkmark-circle" size={13} color={colors.success} />
-                <Text style={[styles.metaText, { color: colors.success }]}>Chute Open</Text>
+            {location ? (
+              <View style={styles.metaChip}>
+                <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+                <Text style={styles.metaText}>
+                  {location.latitude.toFixed(5)}°  {location.longitude.toFixed(5)}°
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.metaChip}>
+                <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+                <Text style={styles.metaText}>Acquiring GPS…</Text>
               </View>
             )}
           </View>
 
-          <View style={styles.sparkContainer}>
-            <SparkLine data={data.altitudeHistory} color={statusColor} width={340} height={50} />
-          </View>
-        </View>
+          <AnimatePresence>
+            {altHist.current.length >= 2 && (
+              <MotiView
+                key="sparkline"
+                from={{ opacity: 0, scaleX: 0.85 }}
+                animate={{ opacity: 1, scaleX: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', damping: 16, stiffness: 120 }}
+                style={[styles.sparkWrap, { transformOrigin: 'left' } as any]}
+              >
+                <SparkLine
+                  data={altHist.current}
+                  color={statusCfg.color}
+                  width={cardInner}
+                  height={44}
+                />
+              </MotiView>
+            )}
+          </AnimatePresence>
+        </MotiView>
 
-        {/* Vitals grid */}
-        <View style={styles.sectionHeader}>
+        {/* ── Vitals ──────────────────────────────────── */}
+        <MotiView
+          from={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ type: 'timing', duration: 240, delay: 120 }}
+          style={styles.sectionRow}
+        >
           <Text style={styles.sectionTitle}>Vitals</Text>
-          <View style={styles.liveRow}>
-            <View style={[styles.liveDot, { backgroundColor: colors.success }]} />
-            <Text style={[styles.liveLabel, { color: colors.success }]}>Live</Text>
-          </View>
-        </View>
-
-        <View style={styles.metricsRow}>
-          <MetricCard label="Heart Rate" value={data.heartRate} unit="bpm" color={colors.heartRate} warning={data.heartRate > 160}>
-            <SparkLine data={data.heartRateHistory} color={colors.heartRate} width={100} height={28} />
-          </MetricCard>
-          <MetricCard label="SpO₂" value={data.oxygen} unit="%" color={colors.oxygen} warning={data.oxygen < 93}>
-            <SparkLine data={data.oxygenHistory} color={colors.oxygen} width={100} height={28} />
-          </MetricCard>
-        </View>
-
-        <View style={styles.metricsRow}>
-          <MetricCard label="Stress" value={data.stress} unit="%" color={colors.stress} warning={data.stress > 80} />
-          <MetricCard label="Temp" value={data.temperature} unit="°C" color={colors.temperature} warning={data.temperature > 37.5} />
-        </View>
-
-        {/* Device row */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Device</Text>
-        </View>
-
-        <View style={styles.deviceRow}>
-          <View style={styles.batteryCard}>
-            <View style={styles.batteryHeader}>
-              <Ionicons
-                name={data.battery > 20 ? 'battery-half' : 'battery-dead'}
-                size={18}
-                color={data.battery > 20 ? colors.battery : colors.danger}
+          {isConnected && (
+            <View style={styles.liveChip}>
+              <MotiView
+                from={{ opacity: 1, scale: 1 }}
+                animate={{ opacity: 0.2, scale: 1.6 }}
+                transition={{ type: 'timing', duration: 900, loop: true, repeatReverse: true }}
+                style={[styles.liveDot, { backgroundColor: colors.success }]}
               />
-              <Text style={[styles.batteryLabel, { color: data.battery > 20 ? colors.battery : colors.danger }]}>
-                {data.battery}%
+              <Text style={[styles.liveText, { color: colors.success }]}>Live</Text>
+            </View>
+          )}
+        </MotiView>
+
+        <AnimatePresence>
+          {isConnected && slowPacket ? (
+            <MotiView
+              key="vitals-card"
+              from={{ opacity: 0, translateY: 12 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              exit={{ opacity: 0, translateY: -8 }}
+              transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 140 }}
+              style={styles.vitalsCard}
+            >
+              {/* HR + SpO2 row */}
+              <View style={styles.vitalsRow}>
+                <View style={styles.vitalCell}>
+                  <Text style={styles.vitalLabel}>Heart Rate</Text>
+                  <View style={styles.vitalValRow}>
+                    <Text style={[
+                      styles.vitalValue,
+                      slowPacket.bpm > 160 && styles.vitalDanger,
+                    ]}>
+                      {Math.round(slowPacket.bpm)}
+                    </Text>
+                    <Text style={styles.vitalUnit}>bpm</Text>
+                    {slowPacket.bpm > 160 && (
+                      <View style={styles.alertDot} />
+                    )}
+                  </View>
+                  <MotiView
+                    from={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ type: 'timing', duration: 400, delay: 200 }}
+                  >
+                    <SparkLine
+                      data={hrHist.current}
+                      color={slowPacket.bpm > 160 ? colors.danger : colors.heartRate}
+                      width={halfCardInner}
+                      height={22}
+                    />
+                  </MotiView>
+                </View>
+
+                <View style={styles.vitalVDivider} />
+
+                <View style={styles.vitalCell}>
+                  <Text style={styles.vitalLabel}>SpO₂</Text>
+                  <View style={styles.vitalValRow}>
+                    <Text style={[
+                      styles.vitalValue,
+                      slowPacket.spo2 < 93 && styles.vitalDanger,
+                    ]}>
+                      {Math.round(slowPacket.spo2)}
+                    </Text>
+                    <Text style={styles.vitalUnit}>%</Text>
+                    {slowPacket.spo2 < 93 && (
+                      <View style={styles.alertDot} />
+                    )}
+                  </View>
+                  <MotiView
+                    from={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ type: 'timing', duration: 400, delay: 250 }}
+                  >
+                    <SparkLine
+                      data={o2Hist.current}
+                      color={slowPacket.spo2 < 93 ? colors.danger : colors.oxygen}
+                      width={halfCardInner}
+                      height={22}
+                    />
+                  </MotiView>
+                </View>
+              </View>
+
+              <View style={styles.vitalHDivider} />
+
+              {/* Stress + Temp row */}
+              <View style={styles.vitalsRow}>
+                <View style={styles.vitalCell}>
+                  <Text style={styles.vitalLabel}>Stress</Text>
+                  <View style={styles.vitalValRow}>
+                    <Text style={[
+                      styles.vitalValue,
+                      slowPacket.stressPct > 80 && styles.vitalDanger,
+                    ]}>
+                      {Math.round(slowPacket.stressPct)}
+                    </Text>
+                    <Text style={styles.vitalUnit}>%</Text>
+                  </View>
+                  <Progress
+                    value={slowPacket.stressPct}
+                    className="h-1 mt-1"
+                    indicatorClassName={slowPacket.stressPct > 80 ? 'bg-destructive' : 'bg-stress'}
+                  />
+                </View>
+
+                <View style={styles.vitalVDivider} />
+
+                <View style={styles.vitalCell}>
+                  <Text style={styles.vitalLabel}>Temperature</Text>
+                  <View style={styles.vitalValRow}>
+                    <Text style={[
+                      styles.vitalValue,
+                      slowPacket.tempC > 37.5 && styles.vitalDanger,
+                    ]}>
+                      {slowPacket.tempC.toFixed(1)}
+                    </Text>
+                    <Text style={styles.vitalUnit}>°C</Text>
+                  </View>
+                </View>
+              </View>
+            </MotiView>
+          ) : (
+            <MotiView
+              key="vitals-empty"
+              from={{ opacity: 0, translateY: 8 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'timing', duration: 260, delay: 140 }}
+              style={styles.emptyCard}
+            >
+              <Ionicons name="bluetooth-outline" size={22} color={colors.textMuted} />
+              <Text style={styles.emptyTitle}>No device connected</Text>
+              <Text style={styles.emptyBody}>
+                Connect a SkyWatch wearable to see live vitals
               </Text>
-            </View>
-            <View style={styles.batteryTrack}>
-              <View
-                style={[
-                  styles.batteryFill,
-                  { width: `${data.battery}%`, backgroundColor: data.battery > 20 ? colors.battery : colors.danger },
-                ]}
-              />
-            </View>
-            <Text style={styles.batteryStatus}>
-              {data.battery > 50 ? 'Good' : data.battery > 20 ? 'Low' : 'Critical'}
-            </Text>
-          </View>
+            </MotiView>
+          )}
+        </AnimatePresence>
 
-          <View style={styles.positionCard}>
-            <Text style={styles.positionLabel}>Position</Text>
-            <Text style={styles.positionValue}>{data.position}</Text>
-            <Text style={styles.positionSub}>Changed {formatDuration(Date.now() - data.lastPositionChange)} ago</Text>
-          </View>
-        </View>
+        {/* ── Motion · IMU ─────────────────────────────── */}
+        {fastPacket && (
+          <MotiView
+            from={{ opacity: 0, translateY: 12 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 180 }}
+          >
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionTitle}>Motion · IMU</Text>
+              {fastPacket.stationary === 1 && (
+                <Text style={styles.staticLabel}>Stationary</Text>
+              )}
+            </View>
+
+            <View style={styles.imuCard}>
+              <Text style={styles.imuGroup}>Orientation</Text>
+              <View style={styles.imuRow}>
+                {[
+                  { label: 'Roll',  val: `${fastPacket.rollDeg.toFixed(1)}°` },
+                  { label: 'Pitch', val: `${fastPacket.pitchDeg.toFixed(1)}°` },
+                  { label: 'Yaw',   val: `${fastPacket.yawDeg.toFixed(1)}°` },
+                ].map(item => (
+                  <View key={item.label} style={styles.imuCell}>
+                    <Text style={styles.imuLabel}>{item.label}</Text>
+                    <Text style={styles.imuValue}>{item.val}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.imuDivider} />
+
+              <Text style={styles.imuGroup}>Accel (g)</Text>
+              <View style={styles.imuRow}>
+                {[
+                  { label: 'X', val: fastPacket.accelX.toFixed(3) },
+                  { label: 'Y', val: fastPacket.accelY.toFixed(3) },
+                  { label: 'Z', val: fastPacket.accelZ.toFixed(3) },
+                ].map(item => (
+                  <View key={item.label} style={styles.imuCell}>
+                    <Text style={styles.imuLabel}>{item.label}</Text>
+                    <Text style={[styles.imuValue, { color: colors.primary }]}>
+                      {item.val}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.imuDivider} />
+
+              <Text style={styles.imuGroup}>Gyro (dps)</Text>
+              <View style={styles.imuRow}>
+                {[
+                  { label: 'X', val: fastPacket.gyroX.toFixed(1) },
+                  { label: 'Y', val: fastPacket.gyroY.toFixed(1) },
+                  { label: 'Z', val: fastPacket.gyroZ.toFixed(1) },
+                ].map(item => (
+                  <View key={item.label} style={styles.imuCell}>
+                    <Text style={styles.imuLabel}>{item.label}</Text>
+                    <Text style={[styles.imuValue, { color: colors.stress }]}>
+                      {item.val}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </MotiView>
+        )}
+
+        {/* ── Device ───────────────────────────────────── */}
+        {slowPacket && (
+          <MotiView
+            from={{ opacity: 0, translateY: 12 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 220 }}
+          >
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionTitle}>Device</Text>
+            </View>
+
+            <View style={styles.deviceRow}>
+              <View style={styles.battCard}>
+                <View style={styles.battTop}>
+                  <Ionicons
+                    name={slowPacket.battPct > 20 ? 'battery-half' : 'battery-dead'}
+                    size={16}
+                    color={slowPacket.battPct > 20 ? colors.battery : colors.danger}
+                  />
+                  <Text style={[
+                    styles.battPct,
+                    { color: slowPacket.battPct > 20 ? colors.textPrimary : colors.danger },
+                  ]}>
+                    {Math.round(slowPacket.battPct)}%
+                  </Text>
+                </View>
+                <Progress
+                  value={slowPacket.battPct}
+                  className="h-1.5 mb-1"
+                  indicatorClassName={slowPacket.battPct > 20 ? 'bg-battery' : 'bg-destructive'}
+                />
+                <Text style={styles.battDetail}>
+                  {slowPacket.voltageV.toFixed(2)} V · {slowPacket.currentMA} mA
+                </Text>
+              </View>
+
+              <View style={styles.sysCard}>
+                {[
+                  { label: 'CPU', val: `${Math.round(slowPacket.cpuPct)}%` },
+                  { label: 'Seq', val: `#${slowPacket.seq}` },
+                  { label: 'Up',  val: `${(slowPacket.uptimeMs / 1000).toFixed(0)}s` },
+                ].map(item => (
+                  <View key={item.label} style={styles.sysRow}>
+                    <Text style={styles.sysLabel}>{item.label}</Text>
+                    <Text style={styles.sysVal}>{item.val}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </MotiView>
+        )}
 
         <View style={{ height: Spacing.xl }} />
       </ScrollView>
@@ -182,53 +499,34 @@ function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     scroll: { flex: 1 },
-    content: { padding: Spacing.md },
+    content: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
 
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: Spacing.xs,
+      marginBottom: Spacing.md,
     },
     appTitle: {
       fontSize: Typography.lg,
       fontWeight: Typography.bold,
       color: colors.textPrimary,
-      letterSpacing: 2,
+      letterSpacing: 3,
     },
-    subTitle: { fontSize: Typography.sm, color: colors.textMuted, marginTop: 1 },
-    updateTime: {
+    subTitle: {
       fontSize: Typography.xs,
       color: colors.textMuted,
-      marginBottom: Spacing.md,
-      fontFamily: Typography.mono,
+      marginTop: 2,
+      letterSpacing: 0.2,
     },
-
-    section: { marginBottom: Spacing.xs },
-    sectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-      marginBottom: Spacing.sm,
-      marginTop: Spacing.md,
-    },
-    sectionTitle: {
-      fontSize: Typography.xs,
-      fontWeight: Typography.semibold,
-      color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 1,
-    },
-    liveRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    liveDot: { width: 6, height: 6, borderRadius: 3 },
-    liveLabel: { fontSize: Typography.xs, fontWeight: Typography.semibold },
 
     heroCard: {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.lg,
       borderWidth: 1,
+      borderColor: colors.border,
       padding: Spacing.md,
-      marginBottom: Spacing.sm,
+      marginBottom: Spacing.md,
     },
     heroTop: {
       flexDirection: 'row',
@@ -236,38 +534,172 @@ function makeStyles(colors: AppColors) {
       alignItems: 'center',
       marginBottom: Spacing.sm,
     },
-    statusPill: {
+    sessionTimer: {
+      fontSize: Typography.sm,
+      color: colors.textMuted,
+      fontFamily: Typography.mono,
+    },
+
+    altRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 6,
+      marginBottom: Spacing.xs,
+    },
+    altValue: {
+      fontSize: 52,
+      fontWeight: Typography.bold,
+      color: colors.textPrimary,
+      fontVariant: ['tabular-nums'],
+      lineHeight: 58,
+    },
+    altUnit: {
+      fontSize: Typography.xl,
+      color: colors.textMuted,
+      marginBottom: 8,
+    },
+
+    heroMeta: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+      marginBottom: Spacing.sm,
+    },
+    metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    metaText: {
+      fontSize: Typography.xs,
+      color: colors.textMuted,
+      fontFamily: Typography.mono,
+    },
+
+    sparkWrap: { marginTop: Spacing.xs, overflow: 'hidden' },
+
+    sectionRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: Radius.full,
-      borderWidth: 1,
+      justifyContent: 'space-between',
+      marginBottom: Spacing.sm,
+      marginTop: 4,
     },
-    statusDot: { width: 7, height: 7, borderRadius: 4 },
-    statusLabel: {
+    sectionTitle: {
       fontSize: Typography.xs,
-      fontWeight: Typography.bold,
-      letterSpacing: 0.5,
+      fontWeight: Typography.semibold,
+      color: colors.textMuted,
       textTransform: 'uppercase',
+      letterSpacing: 1.2,
     },
-    jumpTimer: { fontSize: Typography.sm, color: colors.textMuted, fontFamily: Typography.mono },
+    liveChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    liveDot: { width: 6, height: 6, borderRadius: 3 },
+    liveText: { fontSize: Typography.xs, fontWeight: Typography.medium },
+    staticLabel: { fontSize: Typography.xs, color: colors.textMuted },
 
-    altitudeRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: Spacing.sm },
-    altitudeValue: { fontSize: 52, fontWeight: Typography.bold, fontVariant: ['tabular-nums'], lineHeight: 56 },
-    altitudeUnit: { fontSize: Typography.xl, color: colors.textMuted, marginBottom: 6 },
+    vitalsCard: {
+      backgroundColor: colors.surfaceRaised,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      marginBottom: Spacing.md,
+    },
+    vitalsRow: { flexDirection: 'row' },
+    vitalCell: { flex: 1, padding: Spacing.md },
+    vitalVDivider: { width: 1, backgroundColor: colors.border },
+    vitalHDivider: { height: 1, backgroundColor: colors.border },
+    vitalLabel: {
+      fontSize: Typography.xs,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginBottom: 4,
+    },
+    vitalValRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 3,
+      marginBottom: 6,
+    },
+    vitalValue: {
+      fontSize: Typography.xl,
+      fontWeight: Typography.bold,
+      color: colors.textPrimary,
+      fontVariant: ['tabular-nums'],
+    },
+    vitalDanger: { color: '#FF3B30' },
+    vitalUnit: {
+      fontSize: Typography.sm,
+      color: colors.textMuted,
+      marginBottom: 2,
+    },
+    alertDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: '#FF3B30',
+      marginBottom: 4,
+      marginLeft: 2,
+    },
 
-    heroMeta: { flexDirection: 'row', gap: Spacing.md, flexWrap: 'wrap', marginBottom: Spacing.xs },
-    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    metaText: { fontSize: Typography.sm, color: colors.textSecondary },
+    emptyCard: {
+      backgroundColor: colors.surfaceRaised,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: Spacing.xl,
+      alignItems: 'center',
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    emptyTitle: {
+      fontSize: Typography.base,
+      color: colors.textSecondary,
+      fontWeight: Typography.semibold,
+    },
+    emptyBody: {
+      fontSize: Typography.sm,
+      color: colors.textMuted,
+      textAlign: 'center',
+      lineHeight: Typography.sm * 1.6,
+    },
 
-    sparkContainer: { marginTop: Spacing.xs, marginHorizontal: -Spacing.xs },
+    imuCard: {
+      backgroundColor: colors.surfaceRaised,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+    },
+    imuGroup: {
+      fontSize: Typography.xs,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginBottom: Spacing.sm,
+    },
+    imuRow: {
+      flexDirection: 'row',
+      marginBottom: Spacing.sm,
+    },
+    imuCell: { flex: 1, alignItems: 'center' },
+    imuLabel: { fontSize: Typography.xs, color: colors.textMuted, marginBottom: 3 },
+    imuValue: {
+      fontSize: Typography.base,
+      fontWeight: Typography.semibold,
+      color: colors.textPrimary,
+      fontFamily: Typography.mono,
+    },
+    imuDivider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: Spacing.sm,
+    },
 
-    metricsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
-
-    deviceRow: { flexDirection: 'row', gap: Spacing.sm },
-    batteryCard: {
+    deviceRow: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    battCard: {
       flex: 1,
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.md,
@@ -275,29 +707,24 @@ function makeStyles(colors: AppColors) {
       borderColor: colors.border,
       padding: Spacing.md,
     },
-    batteryHeader: {
+    battTop: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: Spacing.xs,
       marginBottom: Spacing.sm,
     },
-    batteryLabel: { fontSize: Typography.md, fontWeight: Typography.bold, fontFamily: Typography.mono },
-    batteryTrack: {
-      height: 5,
-      backgroundColor: colors.borderMuted,
-      borderRadius: 3,
-      overflow: 'hidden',
-      marginBottom: Spacing.xs,
+    battPct: {
+      fontSize: Typography.md,
+      fontWeight: Typography.bold,
+      fontFamily: Typography.mono,
     },
-    batteryFill: { height: '100%', borderRadius: 3 },
-    batteryStatus: {
+    battDetail: {
       fontSize: Typography.xs,
       color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
+      fontFamily: Typography.mono,
     },
 
-    positionCard: {
+    sysCard: {
       flex: 1,
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.md,
@@ -305,21 +732,24 @@ function makeStyles(colors: AppColors) {
       borderColor: colors.border,
       padding: Spacing.md,
       justifyContent: 'center',
+      gap: Spacing.sm,
     },
-    positionLabel: {
+    sysRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    sysLabel: {
       fontSize: Typography.xs,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      marginBottom: 4,
+      letterSpacing: 0.5,
     },
-    positionValue: {
-      fontSize: Typography.lg,
-      fontWeight: Typography.bold,
+    sysVal: {
+      fontSize: Typography.sm,
+      fontWeight: Typography.semibold,
       color: colors.textPrimary,
-      textTransform: 'capitalize',
-      marginBottom: 4,
+      fontFamily: Typography.mono,
     },
-    positionSub: { fontSize: Typography.xs, color: colors.textMuted },
   })
 }

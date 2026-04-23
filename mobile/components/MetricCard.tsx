@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react'
 import { View, Text, StyleSheet } from 'react-native'
+import { MotiView } from 'moti'
 import { useTheme } from '../lib/ThemeContext'
 import { AppColors, Typography, Spacing, Radius } from '../lib/theme'
 
@@ -10,19 +11,25 @@ interface Props {
   color?: string
   warning?: boolean
   large?: boolean
+  delay?: number
   children?: React.ReactNode
 }
 
-export function MetricCard({ label, value, unit, color, warning, large, children }: Props) {
+export function MetricCard({ label, value, unit, color, warning, large, delay = 0, children }: Props) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const accentColor = warning ? colors.danger : (color ?? colors.primary)
 
   return (
-    <View style={[
-      styles.card,
-      warning && { borderColor: colors.danger + '60', backgroundColor: colors.dangerDim },
-    ]}>
+    <MotiView
+      from={{ opacity: 0, translateY: 8 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: 'spring', damping: 18, stiffness: 110, delay }}
+      style={[
+        styles.card,
+        warning && { borderColor: colors.danger + '60', backgroundColor: colors.dangerDim },
+      ]}
+    >
       <View style={[styles.accent, { backgroundColor: accentColor }]} />
       <Text style={styles.label}>{label}</Text>
       <View style={styles.valueRow}>
@@ -34,7 +41,7 @@ export function MetricCard({ label, value, unit, color, warning, large, children
         )}
       </View>
       {children}
-    </View>
+    </MotiView>
   )
 }
 

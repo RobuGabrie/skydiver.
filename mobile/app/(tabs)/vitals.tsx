@@ -1,12 +1,21 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { useSimulation } from '../../hooks/useSimulation'
+import { MotiView, AnimatePresence } from 'moti'
+import { useBle } from '../../lib/BleContext'
 import { useTheme } from '../../lib/ThemeContext'
 import { StatusRing } from '../../components/StatusRing'
 import { SparkLine } from '../../components/SparkLine'
+import { Progress } from '~/components/ui/progress'
 import { AppColors, Typography, Spacing, Radius, TouchTarget } from '../../lib/theme'
+import type { VitalPoint } from '../../lib/types'
+
+const MAX_HIST = 40
+
+function pushPoint(arr: VitalPoint[], value: number): VitalPoint[] {
+  return [...arr.slice(-(MAX_HIST - 1)), { time: Date.now(), value }]
+}
 
 interface VitalRowProps {
   label: string
@@ -17,175 +26,275 @@ interface VitalRowProps {
   max: number
   warning: boolean
   description: string
-  history: { time: number; value: number }[]
+  history: VitalPoint[]
   colors: AppColors
+  index: number
 }
 
-function VitalRow({ label, value, unit, color, min, max, warning, description, history, colors }: VitalRowProps) {
+function VitalRow({
+  label, value, unit, color, min, max, warning, description, history, colors, index,
+}: VitalRowProps) {
   const [expanded, setExpanded] = useState(false)
   const styles = useMemo(() => makeStyles(colors), [colors])
   const pct = Math.round(((value - min) / (max - min)) * 100)
-  const accentColor = warning ? colors.danger : color
 
   return (
-    <Pressable
-      onPress={() => setExpanded(e => !e)}
-      style={[styles.vitalRow, warning && { borderColor: colors.danger + '50', backgroundColor: colors.dangerDim }]}
-      accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value} ${unit}`}
+    <MotiView
+      from={{ opacity: 0, translateY: 14 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 110, delay: index * 70 }}
     >
-      <View style={styles.vitalTop}>
-        <View style={styles.vitalLeft}>
-          <Text style={[styles.vitalLabel, { color: warning ? colors.danger : colors.textMuted }]}>
-            {label}
-          </Text>
-          <View style={styles.vitalValueRow}>
-            <Text style={[styles.vitalValue, { color: accentColor }]}>{value}</Text>
-            <Text style={[styles.vitalUnit, { color: accentColor + '80' }]}>{unit}</Text>
-            {warning && (
-              <View style={styles.warningBadge}>
-                <Ionicons name="warning" size={11} color={colors.danger} />
-                <Text style={styles.warningText}>Alert</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.progressTrack}>
-            <View
-              style={[styles.progressFill, {
-                width: `${Math.min(100, Math.max(0, pct))}%`,
-                backgroundColor: accentColor,
-              }]}
+      <Pressable
+        onPress={() => setExpanded(e => !e)}
+        style={[
+          styles.vitalRow,
+          warning && { borderColor: colors.danger + '50', backgroundColor: colors.dangerDim },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${value} ${unit}`}
+      >
+        <View style={styles.vitalTop}>
+          <View style={styles.vitalLeft}>
+            <Text style={[styles.vitalLabel, { color: warning ? colors.danger : colors.textMuted }]}>
+              {label}
+            </Text>
+            <View style={styles.vitalValRow}>
+              <Text style={[styles.vitalValue, { color: warning ? colors.danger : colors.textPrimary }]}>
+                {value}
+              </Text>
+              <Text style={[styles.vitalUnit, { color: warning ? colors.danger + '80' : colors.textMuted }]}>
+                {unit}
+              </Text>
+              {warning && (
+                <View style={styles.warningBadge}>
+                  <Ionicons name="warning" size={10} color={colors.danger} />
+                  <Text style={styles.warningText}>Alert</Text>
+                </View>
+              )}
+            </View>
+            <Progress
+              value={Math.min(100, Math.max(0, pct))}
+              className="h-1"
+              indicatorClassName={warning ? 'bg-destructive' : undefined}
             />
           </View>
-        </View>
-        <View style={styles.vitalRight}>
-          <SparkLine data={history} color={accentColor} width={80} height={36} />
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'chevron-down'}
-            size={14}
-            color={colors.textMuted}
-            style={styles.chevron}
-          />
-        </View>
-      </View>
 
-      {expanded && (
-        <View style={styles.expandedSection}>
-          <Text style={styles.expandedDesc}>{description}</Text>
-          <View style={styles.rangeRow}>
-            <Text style={styles.rangeText}>Min: {min} {unit}</Text>
-            <Text style={[styles.rangeText, { color: accentColor }]}>Now: {value} {unit}</Text>
-            <Text style={styles.rangeText}>Max: {max} {unit}</Text>
+          <View style={styles.vitalRight}>
+            <MotiView
+              from={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ type: 'timing', duration: 400, delay: index * 70 + 200 }}
+            >
+              <SparkLine data={history} color={warning ? colors.danger : color} width={72} height={32} />
+            </MotiView>
+            <MotiView
+              animate={{ rotate: expanded ? '180deg' : '0deg' }}
+              transition={{ type: 'spring', damping: 16, stiffness: 200 }}
+              style={styles.chevron}
+            >
+              <Ionicons name="chevron-down" size={13} color={colors.textMuted} />
+            </MotiView>
           </View>
         </View>
-      )}
-    </Pressable>
+
+        <AnimatePresence>
+          {expanded && (
+            <MotiView
+              key="expanded"
+              from={{ opacity: 0, translateY: -6 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              exit={{ opacity: 0, translateY: -6 }}
+              transition={{ type: 'timing', duration: 200 }}
+              style={styles.expandedSection}
+            >
+              <Text style={styles.expandedDesc}>{description}</Text>
+              <View style={styles.rangeRow}>
+                <Text style={styles.rangeText}>Min: {min} {unit}</Text>
+                <Text style={[styles.rangeText, { color: warning ? colors.danger : color }]}>
+                  Now: {value} {unit}
+                </Text>
+                <Text style={styles.rangeText}>Max: {max} {unit}</Text>
+              </View>
+            </MotiView>
+          )}
+        </AnimatePresence>
+      </Pressable>
+    </MotiView>
   )
 }
 
 export default function VitalsScreen() {
   const { colors } = useTheme()
-  const { data } = useSimulation()
+  const { slowPacket, connectedId } = useBle()
   const styles = useMemo(() => makeStyles(colors), [colors])
 
-  const vitals: Omit<VitalRowProps, 'colors'>[] = [
+  const hrHist = useRef<VitalPoint[]>([])
+  const o2Hist = useRef<VitalPoint[]>([])
+  const stressHist = useRef<VitalPoint[]>([])
+  const tempHist = useRef<VitalPoint[]>([])
+  const [, forceUpdate] = useState(false)
+
+  useEffect(() => {
+    if (!slowPacket) return
+    hrHist.current = pushPoint(hrHist.current, slowPacket.bpm)
+    o2Hist.current = pushPoint(o2Hist.current, slowPacket.spo2)
+    stressHist.current = pushPoint(stressHist.current, slowPacket.stressPct)
+    tempHist.current = pushPoint(tempHist.current, slowPacket.tempC)
+    forceUpdate(v => !v)
+  }, [slowPacket])
+
+  const isConnected = connectedId !== null
+
+  if (!isConnected || !slowPacket) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.content}>
+          <MotiView
+            from={{ opacity: 0, translateY: -6 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'timing', duration: 260 }}
+          >
+            <Text style={styles.pageTitle}>Biometrics</Text>
+            <Text style={styles.pageSubtitle}>Live physiological monitoring</Text>
+          </MotiView>
+          <MotiView
+            from={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', damping: 16, stiffness: 100, delay: 100 }}
+            style={styles.emptyState}
+          >
+            <Ionicons name="heart-dislike-outline" size={40} color={colors.textMuted} />
+            <Text style={styles.emptyTitle}>No device connected</Text>
+            <Text style={styles.emptyBody}>
+              Connect a SkyWatch wearable on the Connect tab to see real-time biometric data.
+            </Text>
+          </MotiView>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  const vitals: Omit<VitalRowProps, 'colors' | 'index'>[] = [
     {
       label: 'Heart Rate',
-      value: data.heartRate,
+      value: Math.round(slowPacket.bpm),
       unit: 'bpm',
       color: colors.heartRate,
-      min: 40,
-      max: 200,
-      warning: data.heartRate > 160,
-      description: 'Heart beats per minute. Safe range during freefall: 60–160 bpm. Elevated heart rate may indicate physical stress or exertion.',
-      history: data.heartRateHistory,
+      min: 40, max: 200,
+      warning: slowPacket.bpm > 160,
+      description:
+        'Heart beats per minute. Safe range during freefall: 60–160 bpm. Elevated rate may indicate physical stress.',
+      history: hrHist.current,
     },
     {
       label: 'Blood Oxygen (SpO₂)',
-      value: data.oxygen,
+      value: Math.round(slowPacket.spo2),
       unit: '%',
       color: colors.oxygen,
-      min: 85,
-      max: 100,
-      warning: data.oxygen < 93,
-      description: 'Oxygen saturation in blood. Below 93% is concerning at altitude. Hypoxia can impair decision-making. Normal: 95–100%.',
-      history: data.oxygenHistory,
+      min: 85, max: 100,
+      warning: slowPacket.spo2 < 93,
+      description:
+        'Oxygen saturation in blood. Below 93% is concerning at altitude — hypoxia can impair decision-making. Normal: 95–100%.',
+      history: o2Hist.current,
     },
     {
       label: 'Stress Index',
-      value: data.stress,
+      value: Math.round(slowPacket.stressPct),
       unit: '%',
       color: colors.stress,
-      min: 0,
-      max: 100,
-      warning: data.stress > 80,
-      description: 'Derived stress index from HRV and motion patterns. Above 80% indicates possible panic response or loss of control.',
-      history: data.heartRateHistory.map(p => ({ ...p, value: p.value * 0.5 })),
+      min: 0, max: 100,
+      warning: slowPacket.stressPct > 80,
+      description:
+        'Derived stress index from HRV and motion. Above 80% indicates possible panic response or loss of control.',
+      history: stressHist.current,
     },
     {
       label: 'Body Temperature',
-      value: data.temperature,
+      value: +slowPacket.tempC.toFixed(1),
       unit: '°C',
       color: colors.temperature,
-      min: 35,
-      max: 40,
-      warning: data.temperature > 37.5,
-      description: 'Skin temperature from wrist sensor. Hypothermia risk at high altitude. Normal range: 36.1–37.2°C.',
-      history: data.heartRateHistory.map(p => ({ ...p, value: 36 + Math.sin(p.time / 10000) * 0.8 })),
+      min: 35, max: 40,
+      warning: slowPacket.tempC > 37.5,
+      description:
+        'Skin temperature from wrist sensor. Hypothermia risk at altitude. Normal: 36.1–37.2°C.',
+      history: tempHist.current,
     },
   ]
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Biometrics</Text>
-        <Text style={styles.pageSubtitle}>Live physiological monitoring</Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <MotiView
+          from={{ opacity: 0, translateY: -6 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'timing', duration: 260 }}
+        >
+          <Text style={styles.pageTitle}>Biometrics</Text>
+          <Text style={styles.pageSubtitle}>Live physiological monitoring</Text>
+        </MotiView>
 
         {/* Status rings */}
-        <View style={styles.ringsCard}>
-          <View style={styles.ringItem}>
-            <StatusRing
-              value={data.oxygen}
-              size={88}
-              color={data.oxygen < 93 ? colors.danger : colors.oxygen}
-            />
-            <Text style={styles.ringLabel}>SpO₂</Text>
-            <Text style={[styles.ringValue, { color: data.oxygen < 93 ? colors.danger : colors.oxygen }]}>
-              {data.oxygen}%
-            </Text>
-          </View>
-          <View style={styles.ringDivider} />
-          <View style={styles.ringItem}>
-            <StatusRing
-              value={data.stress}
-              size={88}
-              color={data.stress > 80 ? colors.danger : colors.stress}
-            />
-            <Text style={styles.ringLabel}>Stress</Text>
-            <Text style={[styles.ringValue, { color: data.stress > 80 ? colors.danger : colors.stress }]}>
-              {data.stress}%
-            </Text>
-          </View>
-          <View style={styles.ringDivider} />
-          <View style={styles.ringItem}>
-            <StatusRing
-              value={data.battery}
-              size={88}
-              color={data.battery < 20 ? colors.danger : colors.battery}
-            />
-            <Text style={styles.ringLabel}>Battery</Text>
-            <Text style={[styles.ringValue, { color: data.battery < 20 ? colors.danger : colors.battery }]}>
-              {data.battery}%
-            </Text>
-          </View>
-        </View>
+        <MotiView
+          from={{ opacity: 0, translateY: 14 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 100, delay: 60 }}
+          style={styles.ringsCard}
+        >
+          {[
+            {
+              value: slowPacket.spo2,
+              color: slowPacket.spo2 < 93 ? colors.danger : colors.oxygen,
+              label: 'SpO₂',
+              display: `${Math.round(slowPacket.spo2)}%`,
+              delay: 80,
+            },
+            {
+              value: slowPacket.stressPct,
+              color: slowPacket.stressPct > 80 ? colors.danger : colors.stress,
+              label: 'Stress',
+              display: `${Math.round(slowPacket.stressPct)}%`,
+              delay: 140,
+            },
+            {
+              value: slowPacket.battPct,
+              color: slowPacket.battPct < 20 ? colors.danger : colors.battery,
+              label: 'Battery',
+              display: `${Math.round(slowPacket.battPct)}%`,
+              delay: 200,
+            },
+          ].map((ring, i) => (
+            <React.Fragment key={ring.label}>
+              {i > 0 && <View style={styles.ringDivider} />}
+              <MotiView
+                from={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ type: 'spring', damping: 14, stiffness: 120, delay: ring.delay }}
+                style={styles.ringItem}
+              >
+                <StatusRing value={ring.value} size={88} color={ring.color} />
+                <Text style={styles.ringLabel}>{ring.label}</Text>
+                <Text style={[styles.ringValue, { color: ring.color }]}>{ring.display}</Text>
+              </MotiView>
+            </React.Fragment>
+          ))}
+        </MotiView>
 
-        <Text style={styles.sectionTitle}>Detail View</Text>
-        <Text style={styles.sectionHint}>Tap a row to expand</Text>
+        <MotiView
+          from={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ type: 'timing', duration: 240, delay: 200 }}
+        >
+          <Text style={styles.sectionTitle}>Detail View</Text>
+          <Text style={styles.sectionHint}>Tap a row to expand</Text>
+        </MotiView>
 
         <View style={styles.vitalsList}>
-          {vitals.map(v => (
-            <VitalRow key={v.label} {...v} colors={colors} />
+          {vitals.map((v, i) => (
+            <VitalRow key={v.label} {...v} colors={colors} index={i} />
           ))}
         </View>
 
@@ -201,8 +310,35 @@ function makeStyles(colors: AppColors) {
     scroll: { flex: 1 },
     content: { padding: Spacing.md },
 
-    pageTitle: { fontSize: Typography.xl, fontWeight: Typography.bold, color: colors.textPrimary, marginBottom: 2 },
-    pageSubtitle: { fontSize: Typography.sm, color: colors.textMuted, marginBottom: Spacing.lg },
+    pageTitle: {
+      fontSize: Typography.xl,
+      fontWeight: Typography.bold,
+      color: colors.textPrimary,
+      marginBottom: 2,
+    },
+    pageSubtitle: {
+      fontSize: Typography.sm,
+      color: colors.textMuted,
+      marginBottom: Spacing.lg,
+    },
+
+    emptyState: {
+      alignItems: 'center',
+      paddingTop: Spacing.xxl,
+      gap: Spacing.md,
+    },
+    emptyTitle: {
+      fontSize: Typography.md,
+      fontWeight: Typography.semibold,
+      color: colors.textSecondary,
+    },
+    emptyBody: {
+      fontSize: Typography.sm,
+      color: colors.textMuted,
+      textAlign: 'center',
+      lineHeight: Typography.sm * 1.7,
+      maxWidth: 280,
+    },
 
     ringsCard: {
       flexDirection: 'row',
@@ -223,7 +359,11 @@ function makeStyles(colors: AppColors) {
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
-    ringValue: { fontSize: Typography.md, fontWeight: Typography.bold, fontFamily: Typography.mono },
+    ringValue: {
+      fontSize: Typography.md,
+      fontWeight: Typography.bold,
+      fontFamily: Typography.mono,
+    },
 
     sectionTitle: {
       fontSize: Typography.xs,
@@ -233,7 +373,11 @@ function makeStyles(colors: AppColors) {
       letterSpacing: 1,
       marginBottom: 2,
     },
-    sectionHint: { fontSize: Typography.xs, color: colors.textMuted, marginBottom: Spacing.md },
+    sectionHint: {
+      fontSize: Typography.xs,
+      color: colors.textMuted,
+      marginBottom: Spacing.md,
+    },
 
     vitalsList: { gap: Spacing.sm },
 
@@ -245,7 +389,6 @@ function makeStyles(colors: AppColors) {
       padding: Spacing.md,
       minHeight: TouchTarget,
     },
-
     vitalTop: { flexDirection: 'row', gap: Spacing.md },
     vitalLeft: { flex: 1 },
     vitalRight: { alignItems: 'flex-end', justifyContent: 'space-between' },
@@ -257,8 +400,17 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.medium,
       marginBottom: 4,
     },
-    vitalValueRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginBottom: Spacing.sm },
-    vitalValue: { fontSize: Typography.xl, fontWeight: Typography.bold, fontVariant: ['tabular-nums'] },
+    vitalValRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 4,
+      marginBottom: Spacing.sm,
+    },
+    vitalValue: {
+      fontSize: Typography.xl,
+      fontWeight: Typography.bold,
+      fontVariant: ['tabular-nums'],
+    },
     vitalUnit: { fontSize: Typography.sm, marginBottom: 3, fontWeight: Typography.medium },
 
     warningBadge: {
@@ -272,10 +424,12 @@ function makeStyles(colors: AppColors) {
       marginBottom: 3,
       marginLeft: 4,
     },
-    warningText: { fontSize: Typography.xs, color: colors.danger, fontWeight: Typography.semibold },
+    warningText: {
+      fontSize: Typography.xs,
+      color: colors.danger,
+      fontWeight: Typography.semibold,
+    },
 
-    progressTrack: { height: 3, backgroundColor: colors.borderMuted, borderRadius: 2, overflow: 'hidden' },
-    progressFill: { height: '100%', borderRadius: 2 },
     chevron: { marginTop: Spacing.xs },
 
     expandedSection: {
@@ -291,6 +445,10 @@ function makeStyles(colors: AppColors) {
       lineHeight: Typography.sm * 1.6,
     },
     rangeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-    rangeText: { fontSize: Typography.xs, color: colors.textMuted, fontFamily: Typography.mono },
+    rangeText: {
+      fontSize: Typography.xs,
+      color: colors.textMuted,
+      fontFamily: Typography.mono,
+    },
   })
 }

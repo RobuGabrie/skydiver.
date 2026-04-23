@@ -1,10 +1,14 @@
 import React, { useMemo } from 'react'
-import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { MotiView } from 'moti'
 import { useBle } from '../../lib/BleContext'
 import { useConnectivity } from '../../hooks/useConnectivity'
 import { useTheme } from '../../lib/ThemeContext'
+import { Button } from '~/components/ui/button'
+import { Text as UIText } from '~/components/ui/text'
+import { AnimatedPressable } from '~/components/ui/pressable'
 import { AppColors, Typography, Spacing, Radius, TouchTarget } from '../../lib/theme'
 import type { BleCommand } from '../../lib/bleProtocol'
 
@@ -15,40 +19,48 @@ interface DeviceRowProps {
   connected: boolean
   onPress: () => void
   colors: AppColors
+  index: number
 }
 
-function DeviceRow({ name, id, rssi, connected, onPress, colors }: DeviceRowProps) {
+function DeviceRow({ name, id, rssi, connected, onPress, colors, index }: DeviceRowProps) {
   const styles = useMemo(() => makeStyles(colors), [colors])
   const bars = rssi > -60 ? 4 : rssi > -70 ? 3 : rssi > -80 ? 2 : 1
 
   return (
-    <View style={[styles.deviceRow, connected && { borderColor: colors.ble + '40' }]}>
-      <View style={styles.deviceIcon}>
-        <Ionicons name="watch-outline" size={22} color={connected ? colors.ble : colors.textMuted} />
-      </View>
-      <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{name}</Text>
-        <Text style={styles.deviceId}>{id}</Text>
-        <View style={styles.signalRow}>
-          {[1, 2, 3, 4].map(b => (
-            <View
-              key={b}
-              style={[styles.signalBar, { height: 6 + b * 3, backgroundColor: b <= bars ? colors.ble : colors.border }]}
-            />
-          ))}
-          <Text style={styles.rssiText}>{rssi} dBm</Text>
+    <MotiView
+      from={{ opacity: 0, translateX: -12 }}
+      animate={{ opacity: 1, translateX: 0 }}
+      transition={{ type: 'spring', damping: 18, stiffness: 110, delay: index * 60 }}
+    >
+      <View style={[styles.deviceRow, connected && { borderColor: colors.ble + '40' }]}>
+        <View style={styles.deviceIcon}>
+          <Ionicons name="watch-outline" size={22} color={connected ? colors.ble : colors.textMuted} />
         </View>
+        <View style={styles.deviceInfo}>
+          <Text style={styles.deviceName}>{name}</Text>
+          <Text style={styles.deviceId}>{id}</Text>
+          <View style={styles.signalRow}>
+            {[1, 2, 3, 4].map(b => (
+              <View
+                key={b}
+                style={[styles.signalBar, { height: 6 + b * 3, backgroundColor: b <= bars ? colors.ble : colors.border }]}
+              />
+            ))}
+            <Text style={styles.rssiText}>{rssi} dBm</Text>
+          </View>
+        </View>
+        <Button
+          variant={connected ? 'secondary' : 'outline'}
+          size="sm"
+          onPress={onPress}
+          accessibilityLabel={connected ? 'Disconnect device' : 'Connect to device'}
+        >
+          <UIText className={connected ? 'text-green-400' : undefined}>
+            {connected ? 'Connected' : 'Connect'}
+          </UIText>
+        </Button>
       </View>
-      <Pressable
-        onPress={onPress}
-        style={[styles.connectBtn, connected ? styles.connectedBtn : styles.disconnectedBtn]}
-        accessibilityLabel={connected ? 'Disconnect device' : 'Connect to device'}
-      >
-        <Text style={[styles.connectBtnText, connected && { color: colors.success }]}>
-          {connected ? 'Connected' : 'Connect'}
-        </Text>
-      </Pressable>
-    </View>
+    </MotiView>
   )
 }
 
@@ -91,11 +103,22 @@ export default function ConnectScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Connection</Text>
-        <Text style={styles.pageSubtitle}>Manage device connectivity</Text>
+        <MotiView
+          from={{ opacity: 0, translateY: -6 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'timing', duration: 260 }}
+        >
+          <Text style={styles.pageTitle}>Connection</Text>
+          <Text style={styles.pageSubtitle}>Manage device connectivity</Text>
+        </MotiView>
 
         {/* Mode banner */}
-        <View style={[styles.modeBanner, { borderColor: modeColor + '40' }]}>
+        <MotiView
+          from={{ opacity: 0, translateY: 10 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 60 }}
+          style={[styles.modeBanner, { borderColor: modeColor + '40' }]}
+        >
           <View style={[styles.modeBannerIcon, { backgroundColor: modeColor + '15' }]}>
             <Ionicons name={mode === 'wifi' ? 'wifi' : 'bluetooth'} size={18} color={modeColor} />
           </View>
@@ -103,41 +126,55 @@ export default function ConnectScreen() {
             <Text style={[styles.modeTitle, { color: modeColor }]}>{modeLabel}</Text>
             <Text style={styles.modeDesc}>{modeDesc}</Text>
           </View>
-        </View>
+        </MotiView>
 
         {/* Connectivity cards */}
         <View style={styles.connectCards}>
-          <View style={[styles.connectCard, isConnected && { borderColor: colors.wifi + '50' }]}>
-            <View style={styles.connectCardTop}>
-              <View style={styles.connectCardIcon}>
-                <Ionicons name="wifi" size={20} color={colors.wifi} />
+          {[
+            {
+              icon: 'wifi' as const,
+              color: colors.wifi,
+              active: isConnected,
+              title: 'WiFi / Internet',
+              status: isConnected ? 'Connected' : 'Disconnected',
+              desc: isConnected ? 'Live sync with web dashboard active' : 'No internet — BLE only mode',
+              delay: 100,
+            },
+            {
+              icon: 'bluetooth' as const,
+              color: colors.ble,
+              active: bleConnected,
+              title: 'Bluetooth BLE',
+              status: !bleReady ? 'BT Off' : bleConnected ? 'Connected' : 'No Device',
+              desc: bleConnected ? 'Receiving wearable data' : bleReady ? 'Scan to find your SkyWatch' : 'Enable Bluetooth to pair',
+              delay: 150,
+            },
+          ].map(card => (
+            <MotiView
+              key={card.title}
+              from={{ opacity: 0, translateY: 12 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 18, stiffness: 110, delay: card.delay }}
+              style={[styles.connectCard, card.active && { borderColor: card.color + '50' }]}
+            >
+              <View style={styles.connectCardTop}>
+                <View style={styles.connectCardIcon}>
+                  <Ionicons name={card.icon} size={20} color={card.color} />
+                </View>
+                <MotiView
+                  from={{ opacity: 1, scale: 1 }}
+                  animate={card.active ? { opacity: 0.3, scale: 1.5 } : { opacity: 1, scale: 1 }}
+                  transition={card.active ? { type: 'timing', duration: 900, loop: true, repeatReverse: true } : { type: 'timing', duration: 200 }}
+                  style={[styles.indicator, { backgroundColor: card.active ? colors.success : colors.textMuted }]}
+                />
               </View>
-              <View style={[styles.indicator, { backgroundColor: isConnected ? colors.success : colors.textMuted }]} />
-            </View>
-            <Text style={styles.connectCardTitle}>WiFi / Internet</Text>
-            <Text style={[styles.connectCardStatus, { color: isConnected ? colors.success : colors.textMuted }]}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </Text>
-            <Text style={styles.connectCardDesc}>
-              {isConnected ? 'Live sync with web dashboard active' : 'No internet — BLE only mode'}
-            </Text>
-          </View>
-
-          <View style={[styles.connectCard, bleConnected && { borderColor: colors.ble + '50' }]}>
-            <View style={styles.connectCardTop}>
-              <View style={styles.connectCardIcon}>
-                <Ionicons name="bluetooth" size={20} color={colors.ble} />
-              </View>
-              <View style={[styles.indicator, { backgroundColor: bleConnected ? colors.success : colors.textMuted }]} />
-            </View>
-            <Text style={styles.connectCardTitle}>Bluetooth BLE</Text>
-            <Text style={[styles.connectCardStatus, { color: bleConnected ? colors.success : colors.textMuted }]}>
-              {!bleReady ? 'BT Off' : bleConnected ? 'Connected' : 'No Device'}
-            </Text>
-            <Text style={styles.connectCardDesc}>
-              {bleConnected ? 'Receiving wearable data' : bleReady ? 'Scan to find your SkyWatch' : 'Enable Bluetooth to pair'}
-            </Text>
-          </View>
+              <Text style={styles.connectCardTitle}>{card.title}</Text>
+              <Text style={[styles.connectCardStatus, { color: card.active ? colors.success : colors.textMuted }]}>
+                {card.status}
+              </Text>
+              <Text style={styles.connectCardDesc}>{card.desc}</Text>
+            </MotiView>
+          ))}
         </View>
 
         {/* Device commands — only when connected */}
@@ -146,14 +183,16 @@ export default function ConnectScreen() {
             <Text style={styles.sectionTitle}>Device Commands</Text>
             <View style={styles.commandRow}>
               {(['START', 'STOP', 'RESET'] as BleCommand[]).map(cmd => (
-                <Pressable
+                <Button
                   key={cmd}
-                  style={[styles.cmdBtn, cmd === 'RESET' && { borderColor: colors.danger + '60' }]}
+                  variant={cmd === 'RESET' ? 'destructive' : 'outline'}
+                  size="sm"
                   onPress={() => handleCommand(cmd)}
                   accessibilityLabel={`Send ${cmd} command`}
+                  className="flex-1"
                 >
-                  <Text style={[styles.cmdBtnText, cmd === 'RESET' && { color: colors.danger }]}>{cmd}</Text>
-                </Pressable>
+                  <UIText>{cmd}</UIText>
+                </Button>
               ))}
             </View>
 
@@ -185,18 +224,19 @@ export default function ConnectScreen() {
         {/* Device list */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Nearby Devices</Text>
-          <Pressable
+          <Button
+            variant="outline"
+            size="sm"
             onPress={scanning ? () => {} : startScan}
             disabled={!bleReady}
-            style={[styles.scanBtn, !bleReady && { opacity: 0.4 }]}
             accessibilityLabel="Scan for Bluetooth devices"
           >
             {scanning
               ? <ActivityIndicator size="small" color={colors.ble} />
               : <Ionicons name="refresh" size={16} color={colors.ble} />
             }
-            <Text style={styles.scanBtnText}>{scanning ? 'Scanning…' : 'Scan'}</Text>
-          </Pressable>
+            <UIText className="text-ble">{scanning ? 'Scanning…' : 'Scan'}</UIText>
+          </Button>
         </View>
 
         <View style={styles.deviceList}>
@@ -205,7 +245,7 @@ export default function ConnectScreen() {
               {bleReady ? 'No devices found — tap Scan to search.' : 'Enable Bluetooth to scan for devices.'}
             </Text>
           )}
-          {devices.map(d => (
+          {devices.map((d, i) => (
             <DeviceRow
               key={d.id}
               name={d.name}
@@ -214,6 +254,7 @@ export default function ConnectScreen() {
               connected={d.id === connectedId}
               onPress={() => handleDevicePress(d.id)}
               colors={colors}
+              index={i}
             />
           ))}
         </View>
@@ -279,22 +320,9 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.xs, fontWeight: Typography.semibold, color: colors.textMuted,
       textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm,
     },
-    scanBtn: {
-      flexDirection: 'row', alignItems: 'center', gap: 6,
-      paddingHorizontal: 12, paddingVertical: 7, backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.full, borderWidth: 1, borderColor: colors.border,
-      minHeight: TouchTarget, minWidth: TouchTarget,
-    },
-    scanBtnText: { fontSize: Typography.sm, color: colors.ble, fontWeight: Typography.semibold },
     emptyText: { fontSize: Typography.sm, color: colors.textMuted, textAlign: 'center', paddingVertical: Spacing.lg },
 
     commandRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg },
-    cmdBtn: {
-      flex: 1, paddingVertical: 10, borderRadius: Radius.md, borderWidth: 1,
-      borderColor: colors.ble + '60', backgroundColor: colors.surfaceRaised,
-      alignItems: 'center',
-    },
-    cmdBtnText: { fontSize: Typography.sm, fontWeight: Typography.bold, color: colors.ble },
 
     telemetryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
     telemetryCell: {
@@ -317,11 +345,6 @@ function makeStyles(colors: AppColors) {
     signalRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, marginTop: 4 },
     signalBar: { width: 4, borderRadius: 2 },
     rssiText: { fontSize: Typography.xs, color: colors.textMuted, marginLeft: 6, fontFamily: Typography.mono },
-    connectBtn: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.full, minHeight: TouchTarget, justifyContent: 'center', borderWidth: 1 },
-    disconnectedBtn: { borderColor: colors.ble + '50', backgroundColor: colors.surfaceRaised },
-    connectedBtn: { borderColor: colors.success + '50', backgroundColor: colors.surfaceRaised },
-    connectBtnText: { fontSize: Typography.sm, fontWeight: Typography.semibold, color: colors.ble },
-
     protoList: { gap: Spacing.sm },
     protoRow: {
       flexDirection: 'row', gap: Spacing.md, backgroundColor: colors.surfaceRaised,

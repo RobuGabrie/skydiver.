@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react'
+import { PermissionsAndroid, Platform } from 'react-native'
 import { BleManager, Device, State, Subscription } from 'react-native-ble-plx'
 import {
   BLE_CMD_CHAR_UUID,
@@ -30,6 +31,13 @@ export interface ScannedDevice {
   rssi: number
 }
 
+export interface PhoneLocationData {
+  lat: number
+  lon: number
+  altitude: number | null
+  accuracy: number | null
+}
+
 interface BleContextValue {
   bleReady: boolean
   scanning: boolean
@@ -43,6 +51,7 @@ interface BleContextValue {
   connect: (deviceId: string) => Promise<void>
   disconnect: () => Promise<void>
   sendCommand: (cmd: BleCommand) => Promise<void>
+  updatePhoneLocation: (loc: PhoneLocationData) => void
 }
 
 const BleContext = createContext<BleContextValue>({
@@ -58,6 +67,7 @@ const BleContext = createContext<BleContextValue>({
   connect: async () => {},
   disconnect: async () => {},
   sendCommand: async () => {},
+  updatePhoneLocation: () => {},
 })
 
 export function BleProvider({ children }: { children: React.ReactNode }) {
@@ -66,6 +76,9 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
   const notifSubs = useRef<Subscription[]>([])
   const sessionIdRef = useRef('')
   const sequenceRef = useRef(0)
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const phoneLocationRef = useRef<PhoneLocationData | null>(null)
+  const fastPacketRef = useRef<FastPacket | null>(null)
 
   const [bleReady, setBleReady] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -84,6 +97,9 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
 
     sequenceRef.current += 1
 
+    const loc = phoneLocationRef.current
+    const fast = fastPacketRef.current
+
     const event: SlowTelemetryEvent = {
       eventId: `${sessionIdRef.current}-${sequenceRef.current}`,
       sessionId: sessionIdRef.current,
@@ -97,10 +113,47 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
         stress: packet.stressPct,
         temperature: packet.tempC,
         battery: packet.battPct,
+        ...(loc && {
+          phoneLat: loc.lat,
+          phoneLon: loc.lon,
+          phoneAltitude: loc.altitude ?? undefined,
+          phoneLocationAccuracy: loc.accuracy ?? undefined,
+        }),
+        ...(fast && {
+          rollDeg: fast.rollDeg,
+          pitchDeg: fast.pitchDeg,
+          yawDeg: fast.yawDeg,
+          accelX: fast.accelX,
+          accelY: fast.accelY,
+          accelZ: fast.accelZ,
+          gyroX: fast.gyroX,
+          gyroY: fast.gyroY,
+          gyroZ: fast.gyroZ,
+          stationary: fast.stationary,
+        }),
       },
     }
 
     enqueueTelemetryEvent(event).catch(() => {})
+  }
+
+  async function ensureScanPermissions() {
+    if (Platform.OS !== 'android') return true
+
+    if (Platform.Version >= 31) {
+      const results = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      ])
+
+      return Object.values(results).every(result => result === PermissionsAndroid.RESULTS.GRANTED)
+    }
+
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    )
+
+    return result === PermissionsAndroid.RESULTS.GRANTED
   }
 
   // ------------------------------------------------------------------
@@ -127,37 +180,53 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
     const manager = managerRef.current
     if (!manager || !bleReady || scanning) return
 
-    setDevices([])
-    setScanning(true)
+    ensureScanPermissions().then(granted => {
+      if (!granted) {
+        setScanning(false)
+        return
+      }
 
-    manager.startDeviceScan(
-      [BLE_SERVICE_UUID],
-      { allowDuplicates: false },
-      (error, device) => {
-        if (error) {
-          setScanning(false)
-          return
-        }
-        if (!device) return
-        const name = device.localName ?? device.name ?? ''
-        if (!name.toLowerCase().startsWith(BLE_DEVICE_NAME_PREFIX)) return
+      setDevices([])
+      setScanning(true)
 
-        setDevices(prev => {
-          const exists = prev.some(d => d.id === device.id)
-          if (exists) return prev
-          return [...prev, { id: device.id, name, rssi: device.rssi ?? -99 }]
-        })
-      },
-    )
+      manager.startDeviceScan(
+        null,
+        { allowDuplicates: false },
+        (error, device) => {
+          if (error) {
+            setScanning(false)
+            return
+          }
+          if (!device) return
+          const name = device.localName ?? device.name ?? ''
+          const hasTargetService = device.serviceUUIDs?.some(
+            uuid => uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase(),
+          ) ?? false
+          if (!name.toLowerCase().startsWith(BLE_DEVICE_NAME_PREFIX) && !hasTargetService) return
 
-    // Auto-stop after 10 s
-    setTimeout(() => {
-      manager.stopDeviceScan()
+          setDevices(prev => {
+            const exists = prev.some(d => d.id === device.id)
+            if (exists) return prev
+            return [...prev, { id: device.id, name, rssi: device.rssi ?? -99 }]
+          })
+        },
+      )
+
+      // Auto-stop after 10 s
+      scanTimeoutRef.current = setTimeout(() => {
+        manager.stopDeviceScan()
+        setScanning(false)
+      }, 10000)
+    }).catch(() => {
       setScanning(false)
-    }, 10000)
+    })
   }, [bleReady, scanning])
 
   const stopScan = useCallback(() => {
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current)
+      scanTimeoutRef.current = null
+    }
     managerRef.current?.stopDeviceScan()
     setScanning(false)
   }, [])
@@ -192,7 +261,10 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
         if (err || !char?.value) return
         const bytes = decodeNotification(char.value)
         const pkt = parseFastPacket(bytes)
-        if (pkt) setFastPacket(pkt)
+        if (pkt) {
+          fastPacketRef.current = pkt
+          setFastPacket(pkt)
+        }
       },
     )
 
@@ -220,6 +292,7 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
       deviceRef.current = null
       sessionIdRef.current = ''
       sequenceRef.current = 0
+      fastPacketRef.current = null
       setConnectedId(null)
       setFastPacket(null)
       setSlowPacket(null)
@@ -239,12 +312,17 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
       deviceRef.current = null
     }
 
+    fastPacketRef.current = null
     setConnectedId(null)
     setFastPacket(null)
     setSlowPacket(null)
     setRssi(0)
     sessionIdRef.current = ''
     sequenceRef.current = 0
+  }, [])
+
+  const updatePhoneLocation = useCallback((loc: PhoneLocationData) => {
+    phoneLocationRef.current = loc
   }, [])
 
   // ------------------------------------------------------------------
@@ -276,6 +354,7 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
         connect,
         disconnect,
         sendCommand,
+        updatePhoneLocation,
       }}
     >
       {children}
