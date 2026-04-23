@@ -1,54 +1,52 @@
-// Accent colors — identical in light and dark modes (iOS system palette)
 const Accents = {
-  primary:     '#007AFF',
-  success:     '#34C759',
-  warning:     '#FF9F0A',
+  primary:     '#00E5FF',
+  success:     '#00E676',
+  warning:     '#FFB300',
   danger:      '#FF3B30',
-  heartRate:   '#FF3B30',
-  oxygen:      '#007AFF',
+  heartRate:   '#FF4D6A',
+  oxygen:      '#00E5FF',
   stress:      '#BF5AF2',
-  temperature: '#FF9F0A',
-  battery:     '#34C759',
-  wifi:        '#007AFF',
-  ble:         '#BF5AF2',
-  offline:     '#8E8E93',
+  temperature: '#FFB300',
+  battery:     '#00E676',
+  wifi:        '#00BFFF',
+  ble:         '#00E5FF',
+  offline:     '#4A5568',
 } as const
 
 export const DarkColors = {
-  background:    '#000000',
-  surface:       '#1C1C1E',
-  surfaceRaised: '#2C2C2E',
-  border:        '#38383A',
-  borderMuted:   '#2C2C2E',
-  textPrimary:   '#FFFFFF',
-  textSecondary: '#EBEBF5',
-  textMuted:     '#636366',
-  primaryDim:    '#001D45',
-  dangerDim:     '#3A0000',
-  warningDim:    '#2A1800',
-  infoDim:       '#001835',
+  background:    '#060D14',
+  surface:       '#0C1521',
+  surfaceRaised: '#111D2C',
+  border:        '#1A2D42',
+  borderMuted:   '#0E1A28',
+  textPrimary:   '#E8F4FD',
+  textSecondary: '#7BA8C8',
+  textMuted:     '#3A5A78',
+  primaryDim:    '#00131F',
+  dangerDim:     '#160404',
+  warningDim:    '#160D00',
+  infoDim:       '#00131F',
   ...Accents,
 } as const
 
 export const LightColors = {
-  background:    '#F2F2F7',
+  background:    '#EEF4F9',
   surface:       '#FFFFFF',
-  surfaceRaised: '#FFFFFF',
-  border:        '#C6C6C8',
-  borderMuted:   '#E5E5EA',
-  textPrimary:   '#000000',
-  textSecondary: '#3C3C43',
-  textMuted:     '#8E8E93',
-  primaryDim:    '#E3F0FF',
+  surfaceRaised: '#F8FBFF',
+  border:        '#C0D4E8',
+  borderMuted:   '#DCE9F5',
+  textPrimary:   '#0A1628',
+  textSecondary: '#2A4A6A',
+  textMuted:     '#5A7A9A',
+  primaryDim:    '#E0FAFF',
   dangerDim:     '#FFF0EF',
-  warningDim:    '#FFF7E6',
-  infoDim:       '#EAF2FF',
+  warningDim:    '#FFF8E1',
+  infoDim:       '#E0FAFF',
   ...Accents,
 } as const
 
 export type AppColors = typeof DarkColors
 
-// Backward compatibility — defaults to dark
 export const Colors = DarkColors
 
 export const Spacing = {
@@ -76,7 +74,7 @@ export const Typography = {
   lg:   20,
   xl:   24,
   xxl:  32,
-  hero: 48,
+  hero: 52,
 
   regular:   '400' as const,
   medium:    '500' as const,

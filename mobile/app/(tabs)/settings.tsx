@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { View, Text, ScrollView, StyleSheet, Pressable, Switch } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { MotiView } from 'moti'
 import { useTheme } from '../../lib/ThemeContext'
 import { AppColors, Typography, Spacing, Radius, TouchTarget } from '../../lib/theme'
 
@@ -32,7 +33,7 @@ function ToggleRow({ label, description, value, onChange, color, colors }: Toggl
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: colors.border, true: trackColor + '70' }}
+        trackColor={{ false: colors.border, true: trackColor + '60' }}
         thumbColor={value ? trackColor : colors.textMuted}
         ios_backgroundColor={colors.border}
       />
@@ -62,7 +63,7 @@ function ThresholdRow({ label, value, unit, color, onPress, colors }: ThresholdR
         <Text style={styles.settingLabel}>{label}</Text>
         <Text style={styles.settingDesc}>Alert threshold</Text>
       </View>
-      <View style={styles.thresholdBadge}>
+      <View style={[styles.thresholdBadge, { borderColor: color + '40' }]}>
         <Text style={[styles.thresholdValue, { color }]}>{value}</Text>
         <Text style={[styles.thresholdUnit, { color: colors.textMuted }]}>{unit}</Text>
         <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
@@ -100,11 +101,22 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Settings</Text>
-        <Text style={styles.pageSubtitle}>Alerts, thresholds & preferences</Text>
+        <MotiView
+          from={{ opacity: 0, translateY: -6 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'timing', duration: 260 }}
+        >
+          <Text style={styles.pageTitle}>Settings</Text>
+          <Text style={styles.pageSubtitle}>Alerts, thresholds & preferences</Text>
+        </MotiView>
 
         {/* Profile card */}
-        <View style={styles.profileCard}>
+        <MotiView
+          from={{ opacity: 0, translateY: 10 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 60 }}
+          style={styles.profileCard}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>AM</Text>
           </View>
@@ -115,7 +127,7 @@ export default function SettingsScreen() {
           <Pressable style={styles.editBtn} accessibilityLabel="Edit profile">
             <Ionicons name="pencil" size={16} color={colors.primary} />
           </Pressable>
-        </View>
+        </MotiView>
 
         {/* Appearance */}
         <SectionHeader title="Appearance" colors={colors} />
@@ -183,13 +195,21 @@ export default function SettingsScreen() {
         </View>
 
         {/* App info */}
-        <View style={styles.infoCard}>
+        <MotiView
+          from={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ type: 'timing', duration: 300, delay: 200 }}
+          style={styles.infoCard}
+        >
+          <View style={[styles.infoIcon, { backgroundColor: colors.primary + '18' }]}>
+            <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+          </View>
           <Text style={styles.infoTitle}>Skydiver Monitor</Text>
           <Text style={styles.infoVersion}>Version 1.0.0 · Android</Text>
           <Text style={styles.infoDesc}>
             Real-time biometric monitoring via BLE wearable. Safety analysis. Data syncs to web dashboard when WiFi is available.
           </Text>
-        </View>
+        </MotiView>
 
         <View style={{ height: Spacing.xl }} />
       </ScrollView>
@@ -203,7 +223,13 @@ function makeStyles(colors: AppColors) {
     scroll: { flex: 1 },
     content: { padding: Spacing.md },
 
-    pageTitle: { fontSize: Typography.xl, fontWeight: Typography.bold, color: colors.textPrimary, marginBottom: 2 },
+    pageTitle: {
+      fontSize: Typography.xl,
+      fontWeight: Typography.bold,
+      color: colors.textPrimary,
+      marginBottom: 2,
+      letterSpacing: 0.5,
+    },
     pageSubtitle: { fontSize: Typography.sm, color: colors.textMuted, marginBottom: Spacing.lg },
 
     profileCard: {
@@ -213,7 +239,7 @@ function makeStyles(colors: AppColors) {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.md,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.primary + '30',
       padding: Spacing.md,
       marginBottom: Spacing.lg,
     },
@@ -221,14 +247,16 @@ function makeStyles(colors: AppColors) {
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: colors.primaryDim,
+      backgroundColor: colors.primary + '20',
+      borderWidth: 1.5,
+      borderColor: colors.primary + '60',
       alignItems: 'center',
       justifyContent: 'center',
     },
     avatarText: { fontSize: Typography.base, fontWeight: Typography.bold, color: colors.primary },
     profileInfo: { flex: 1 },
     profileName: { fontSize: Typography.base, fontWeight: Typography.semibold, color: colors.textPrimary },
-    profileMeta: { fontSize: Typography.xs, color: colors.textMuted, marginTop: 2 },
+    profileMeta: { fontSize: Typography.xs, color: colors.textMuted, marginTop: 2, fontFamily: Typography.mono },
     editBtn: { width: TouchTarget, height: TouchTarget, alignItems: 'center', justifyContent: 'center' },
 
     sectionTitle: {
@@ -236,7 +264,7 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.semibold,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 1,
+      letterSpacing: 1.2,
       marginTop: Spacing.lg,
       marginBottom: Spacing.sm,
       paddingHorizontal: 2,
@@ -271,7 +299,6 @@ function makeStyles(colors: AppColors) {
       paddingVertical: 6,
       borderRadius: Radius.full,
       borderWidth: 1,
-      borderColor: colors.border,
     },
     thresholdValue: { fontSize: Typography.base, fontWeight: Typography.bold, fontFamily: Typography.mono },
     thresholdUnit: { fontSize: Typography.xs, fontWeight: Typography.medium },
@@ -288,10 +315,18 @@ function makeStyles(colors: AppColors) {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.md,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.primary + '25',
       padding: Spacing.md,
       gap: Spacing.xs,
       alignItems: 'center',
+    },
+    infoIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: Spacing.xs,
     },
     infoTitle: { fontSize: Typography.base, fontWeight: Typography.bold, color: colors.textPrimary },
     infoVersion: { fontSize: Typography.xs, color: colors.textMuted, fontFamily: Typography.mono },

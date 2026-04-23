@@ -37,6 +37,7 @@ function VitalRow({
   const [expanded, setExpanded] = useState(false)
   const styles = useMemo(() => makeStyles(colors), [colors])
   const pct = Math.round(((value - min) / (max - min)) * 100)
+  const accentColor = warning ? colors.danger : color
 
   return (
     <MotiView
@@ -48,21 +49,25 @@ function VitalRow({
         onPress={() => setExpanded(e => !e)}
         style={[
           styles.vitalRow,
-          warning && { borderColor: colors.danger + '50', backgroundColor: colors.dangerDim },
+          warning
+            ? { borderColor: colors.danger + '55', backgroundColor: colors.dangerDim }
+            : { borderColor: accentColor + '28' },
         ]}
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${value} ${unit}`}
       >
+        <View style={[styles.rowAccent, { backgroundColor: accentColor }]} />
+
         <View style={styles.vitalTop}>
           <View style={styles.vitalLeft}>
             <Text style={[styles.vitalLabel, { color: warning ? colors.danger : colors.textMuted }]}>
               {label}
             </Text>
             <View style={styles.vitalValRow}>
-              <Text style={[styles.vitalValue, { color: warning ? colors.danger : colors.textPrimary }]}>
+              <Text style={[styles.vitalValue, { color: accentColor }]}>
                 {value}
               </Text>
-              <Text style={[styles.vitalUnit, { color: warning ? colors.danger + '80' : colors.textMuted }]}>
+              <Text style={[styles.vitalUnit, { color: accentColor + '70' }]}>
                 {unit}
               </Text>
               {warning && (
@@ -85,7 +90,7 @@ function VitalRow({
               animate={{ opacity: 1 }}
               transition={{ type: 'timing', duration: 400, delay: index * 70 + 200 }}
             >
-              <SparkLine data={history} color={warning ? colors.danger : color} width={72} height={32} />
+              <SparkLine data={history} color={accentColor} width={72} height={32} />
             </MotiView>
             <MotiView
               animate={{ rotate: expanded ? '180deg' : '0deg' }}
@@ -110,7 +115,7 @@ function VitalRow({
               <Text style={styles.expandedDesc}>{description}</Text>
               <View style={styles.rangeRow}>
                 <Text style={styles.rangeText}>Min: {min} {unit}</Text>
-                <Text style={[styles.rangeText, { color: warning ? colors.danger : color }]}>
+                <Text style={[styles.rangeText, { color: accentColor }]}>
                   Now: {value} {unit}
                 </Text>
                 <Text style={styles.rangeText}>Max: {max} {unit}</Text>
@@ -315,6 +320,7 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.bold,
       color: colors.textPrimary,
       marginBottom: 2,
+      letterSpacing: 0.5,
     },
     pageSubtitle: {
       fontSize: Typography.sm,
@@ -346,7 +352,7 @@ function makeStyles(colors: AppColors) {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.lg,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.primary + '25',
       paddingVertical: Spacing.lg,
       paddingHorizontal: Spacing.sm,
       marginBottom: Spacing.lg,
@@ -357,7 +363,7 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.xs,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: 1,
     },
     ringValue: {
       fontSize: Typography.md,
@@ -370,7 +376,7 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.semibold,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 1,
+      letterSpacing: 1.2,
       marginBottom: 2,
     },
     sectionHint: {
@@ -385,18 +391,25 @@ function makeStyles(colors: AppColors) {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.md,
       borderWidth: 1,
-      borderColor: colors.border,
       padding: Spacing.md,
       minHeight: TouchTarget,
+      overflow: 'hidden',
     },
-    vitalTop: { flexDirection: 'row', gap: Spacing.md },
+    rowAccent: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 2,
+    },
+    vitalTop: { flexDirection: 'row', gap: Spacing.md, paddingTop: 4 },
     vitalLeft: { flex: 1 },
     vitalRight: { alignItems: 'flex-end', justifyContent: 'space-between' },
 
     vitalLabel: {
       fontSize: Typography.xs,
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: 1,
       fontWeight: Typography.medium,
       marginBottom: 4,
     },
@@ -409,6 +422,7 @@ function makeStyles(colors: AppColors) {
     vitalValue: {
       fontSize: Typography.xl,
       fontWeight: Typography.bold,
+      fontFamily: Typography.mono,
       fontVariant: ['tabular-nums'],
     },
     vitalUnit: { fontSize: Typography.sm, marginBottom: 3, fontWeight: Typography.medium },

@@ -14,6 +14,7 @@ import { useConnectivity } from '../../hooks/useConnectivity'
 import { useTheme } from '../../lib/ThemeContext'
 import { usePhoneLocation } from '../../hooks/usePhoneLocation'
 import { ConnectionBadge } from '../../components/ConnectionBadge'
+import { MetricCard } from '../../components/MetricCard'
 import { SparkLine } from '../../components/SparkLine'
 import { Badge } from '~/components/ui/badge'
 import { Text as UIText } from '~/components/ui/text'
@@ -45,10 +46,10 @@ function deriveStatus(
 type BadgeVariant = 'default' | 'success' | 'secondary' | 'destructive'
 
 const STATUS_CFG: Record<SkydiverStatus, { label: string; color: string; variant: BadgeVariant; pulse: boolean }> = {
-  freefall:    { label: 'FREEFALL',    color: '#007AFF', variant: 'default',     pulse: true },
-  canopy_open: { label: 'CANOPY OPEN', color: '#34C759', variant: 'success',     pulse: true },
-  landed:      { label: 'LANDED',      color: '#8E8E93', variant: 'secondary',   pulse: false },
-  standby:     { label: 'STANDBY',     color: '#8E8E93', variant: 'secondary',   pulse: false },
+  freefall:    { label: 'FREEFALL',    color: '#00E5FF', variant: 'default',     pulse: true },
+  canopy_open: { label: 'CANOPY OPEN', color: '#00E676', variant: 'success',     pulse: true },
+  landed:      { label: 'LANDED',      color: '#3A5A78', variant: 'secondary',   pulse: false },
+  standby:     { label: 'STANDBY',     color: '#3A5A78', variant: 'secondary',   pulse: false },
   alert:       { label: 'ALERT',       color: '#FF3B30', variant: 'destructive', pulse: true },
 }
 
@@ -119,8 +120,12 @@ export default function DashboardScreen() {
   const status = deriveStatus(vertSpeed, altitude, fastPacket?.stationary ?? 1)
   const statusCfg = STATUS_CFG[status]
 
+  const gForce = fastPacket
+    ? Math.sqrt(fastPacket.accelX ** 2 + fastPacket.accelY ** 2 + fastPacket.accelZ ** 2)
+    : null
+
   const cardInner = screenWidth - Spacing.md * 2 - Spacing.md * 2
-  const halfCardInner = (screenWidth - Spacing.md * 2 - Spacing.md * 2) / 2 - Spacing.sm
+  const sparkW = Math.floor((screenWidth - Spacing.md * 4 - Spacing.sm) / 2)
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -150,13 +155,13 @@ export default function DashboardScreen() {
           from={{ opacity: 0, translateY: 14 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'spring', damping: 18, stiffness: 100, delay: 60 }}
-          style={styles.heroCard}
+          style={[styles.heroCard, { borderColor: statusCfg.color + '30' }]}
         >
           <View style={styles.heroTop}>
             <Badge variant={statusCfg.variant} className="flex-row items-center gap-1.5">
               <MotiView
                 from={{ opacity: 1, scale: 1 }}
-                animate={statusCfg.pulse ? { opacity: 0.2, scale: 1.6 } : { opacity: 1, scale: 1 }}
+                animate={statusCfg.pulse ? { opacity: 0.15, scale: 1.8 } : { opacity: 1, scale: 1 }}
                 transition={
                   statusCfg.pulse
                     ? { type: 'timing', duration: 850, loop: true, repeatReverse: true }
@@ -174,10 +179,10 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.altRow}>
-            <Text style={styles.altValue}>
+            <Text style={[styles.altValue, { color: statusCfg.color }]}>
               {altitude !== null ? Math.round(altitude).toLocaleString() : '—'}
             </Text>
-            <Text style={styles.altUnit}>m</Text>
+            <Text style={[styles.altUnit, { color: statusCfg.color + '70' }]}>m</Text>
           </View>
 
           <View style={styles.heroMeta}>
@@ -221,7 +226,7 @@ export default function DashboardScreen() {
           </AnimatePresence>
         </MotiView>
 
-        {/* ── Vitals ──────────────────────────────────── */}
+        {/* ── Vitals header ────────────────────────────── */}
         <MotiView
           from={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -233,7 +238,7 @@ export default function DashboardScreen() {
             <View style={styles.liveChip}>
               <MotiView
                 from={{ opacity: 1, scale: 1 }}
-                animate={{ opacity: 0.2, scale: 1.6 }}
+                animate={{ opacity: 0.15, scale: 1.7 }}
                 transition={{ type: 'timing', duration: 900, loop: true, repeatReverse: true }}
                 style={[styles.liveDot, { backgroundColor: colors.success }]}
               />
@@ -242,114 +247,82 @@ export default function DashboardScreen() {
           )}
         </MotiView>
 
+        {/* ── Vitals MetricCard grid ───────────────────── */}
         <AnimatePresence>
           {isConnected && slowPacket ? (
             <MotiView
-              key="vitals-card"
+              key="vitals-grid"
               from={{ opacity: 0, translateY: 12 }}
               animate={{ opacity: 1, translateY: 0 }}
               exit={{ opacity: 0, translateY: -8 }}
               transition={{ type: 'spring', damping: 18, stiffness: 110, delay: 140 }}
-              style={styles.vitalsCard}
             >
-              {/* HR + SpO2 row */}
-              <View style={styles.vitalsRow}>
-                <View style={styles.vitalCell}>
-                  <Text style={styles.vitalLabel}>Heart Rate</Text>
-                  <View style={styles.vitalValRow}>
-                    <Text style={[
-                      styles.vitalValue,
-                      slowPacket.bpm > 160 && styles.vitalDanger,
-                    ]}>
-                      {Math.round(slowPacket.bpm)}
-                    </Text>
-                    <Text style={styles.vitalUnit}>bpm</Text>
-                    {slowPacket.bpm > 160 && (
-                      <View style={styles.alertDot} />
-                    )}
-                  </View>
-                  <MotiView
-                    from={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ type: 'timing', duration: 400, delay: 200 }}
-                  >
-                    <SparkLine
-                      data={hrHist.current}
-                      color={slowPacket.bpm > 160 ? colors.danger : colors.heartRate}
-                      width={halfCardInner}
-                      height={22}
-                    />
+              <View style={styles.metricRow}>
+                <MetricCard
+                  label="Heart Rate"
+                  value={Math.round(slowPacket.bpm)}
+                  unit="bpm"
+                  color={colors.heartRate}
+                  warning={slowPacket.bpm > 160}
+                  delay={140}
+                >
+                  <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ type: 'timing', duration: 400, delay: 220 }}>
+                    <SparkLine data={hrHist.current} color={slowPacket.bpm > 160 ? colors.danger : colors.heartRate} width={sparkW} height={20} />
                   </MotiView>
-                </View>
-
-                <View style={styles.vitalVDivider} />
-
-                <View style={styles.vitalCell}>
-                  <Text style={styles.vitalLabel}>SpO₂</Text>
-                  <View style={styles.vitalValRow}>
-                    <Text style={[
-                      styles.vitalValue,
-                      slowPacket.spo2 < 93 && styles.vitalDanger,
-                    ]}>
-                      {Math.round(slowPacket.spo2)}
-                    </Text>
-                    <Text style={styles.vitalUnit}>%</Text>
-                    {slowPacket.spo2 < 93 && (
-                      <View style={styles.alertDot} />
-                    )}
-                  </View>
-                  <MotiView
-                    from={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ type: 'timing', duration: 400, delay: 250 }}
-                  >
-                    <SparkLine
-                      data={o2Hist.current}
-                      color={slowPacket.spo2 < 93 ? colors.danger : colors.oxygen}
-                      width={halfCardInner}
-                      height={22}
-                    />
+                </MetricCard>
+                <MetricCard
+                  label="SpO₂"
+                  value={Math.round(slowPacket.spo2)}
+                  unit="%"
+                  color={colors.oxygen}
+                  warning={slowPacket.spo2 < 93}
+                  delay={170}
+                >
+                  <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ type: 'timing', duration: 400, delay: 260 }}>
+                    <SparkLine data={o2Hist.current} color={slowPacket.spo2 < 93 ? colors.danger : colors.oxygen} width={sparkW} height={20} />
                   </MotiView>
-                </View>
+                </MetricCard>
               </View>
 
-              <View style={styles.vitalHDivider} />
+              <View style={styles.metricRow}>
+                <MetricCard
+                  label="Stress"
+                  value={Math.round(slowPacket.stressPct)}
+                  unit="%"
+                  color={colors.stress}
+                  warning={slowPacket.stressPct > 80}
+                  progress={slowPacket.stressPct}
+                  delay={200}
+                />
+                <MetricCard
+                  label="Temperature"
+                  value={slowPacket.tempC.toFixed(1)}
+                  unit="°C"
+                  color={colors.temperature}
+                  warning={slowPacket.tempC > 37.5}
+                  delay={230}
+                />
+              </View>
 
-              {/* Stress + Temp row */}
-              <View style={styles.vitalsRow}>
-                <View style={styles.vitalCell}>
-                  <Text style={styles.vitalLabel}>Stress</Text>
-                  <View style={styles.vitalValRow}>
-                    <Text style={[
-                      styles.vitalValue,
-                      slowPacket.stressPct > 80 && styles.vitalDanger,
-                    ]}>
-                      {Math.round(slowPacket.stressPct)}
-                    </Text>
-                    <Text style={styles.vitalUnit}>%</Text>
-                  </View>
-                  <Progress
-                    value={slowPacket.stressPct}
-                    className="h-1 mt-1"
-                    indicatorClassName={slowPacket.stressPct > 80 ? 'bg-destructive' : 'bg-stress'}
+              {fastPacket && gForce !== null && (
+                <View style={styles.metricRow}>
+                  <MetricCard
+                    label="G-Force"
+                    value={gForce.toFixed(2)}
+                    unit="g"
+                    color={gForce > 3 ? colors.warning : colors.primary}
+                    warning={gForce > 4}
+                    delay={260}
+                  />
+                  <MetricCard
+                    label="Vert Speed"
+                    value={Math.abs(vertSpeed).toFixed(1)}
+                    unit="m/s"
+                    color={colors.primary}
+                    delay={290}
                   />
                 </View>
-
-                <View style={styles.vitalVDivider} />
-
-                <View style={styles.vitalCell}>
-                  <Text style={styles.vitalLabel}>Temperature</Text>
-                  <View style={styles.vitalValRow}>
-                    <Text style={[
-                      styles.vitalValue,
-                      slowPacket.tempC > 37.5 && styles.vitalDanger,
-                    ]}>
-                      {slowPacket.tempC.toFixed(1)}
-                    </Text>
-                    <Text style={styles.vitalUnit}>°C</Text>
-                  </View>
-                </View>
-              </View>
+              )}
             </MotiView>
           ) : (
             <MotiView
@@ -393,7 +366,7 @@ export default function DashboardScreen() {
                 ].map(item => (
                   <View key={item.label} style={styles.imuCell}>
                     <Text style={styles.imuLabel}>{item.label}</Text>
-                    <Text style={styles.imuValue}>{item.val}</Text>
+                    <Text style={[styles.imuValue, { color: colors.textSecondary }]}>{item.val}</Text>
                   </View>
                 ))}
               </View>
@@ -458,7 +431,7 @@ export default function DashboardScreen() {
                   />
                   <Text style={[
                     styles.battPct,
-                    { color: slowPacket.battPct > 20 ? colors.textPrimary : colors.danger },
+                    { color: slowPacket.battPct > 20 ? colors.battery : colors.danger },
                   ]}>
                     {Math.round(slowPacket.battPct)}%
                   </Text>
@@ -511,20 +484,19 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.lg,
       fontWeight: Typography.bold,
       color: colors.textPrimary,
-      letterSpacing: 3,
+      letterSpacing: 4,
     },
     subTitle: {
       fontSize: Typography.xs,
       color: colors.textMuted,
       marginTop: 2,
-      letterSpacing: 0.2,
+      letterSpacing: 0.3,
     },
 
     heroCard: {
       backgroundColor: colors.surfaceRaised,
       borderRadius: Radius.lg,
       borderWidth: 1,
-      borderColor: colors.border,
       padding: Spacing.md,
       marginBottom: Spacing.md,
     },
@@ -547,16 +519,15 @@ function makeStyles(colors: AppColors) {
       marginBottom: Spacing.xs,
     },
     altValue: {
-      fontSize: 52,
+      fontSize: 60,
       fontWeight: Typography.bold,
-      color: colors.textPrimary,
+      fontFamily: Typography.mono,
       fontVariant: ['tabular-nums'],
-      lineHeight: 58,
+      lineHeight: 66,
     },
     altUnit: {
       fontSize: Typography.xl,
-      color: colors.textMuted,
-      marginBottom: 8,
+      marginBottom: 10,
     },
 
     heroMeta: {
@@ -586,57 +557,17 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.semibold,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 1.2,
+      letterSpacing: 1.4,
     },
     liveChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     liveDot: { width: 6, height: 6, borderRadius: 3 },
     liveText: { fontSize: Typography.xs, fontWeight: Typography.medium },
     staticLabel: { fontSize: Typography.xs, color: colors.textMuted },
 
-    vitalsCard: {
-      backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: 'hidden',
-      marginBottom: Spacing.md,
-    },
-    vitalsRow: { flexDirection: 'row' },
-    vitalCell: { flex: 1, padding: Spacing.md },
-    vitalVDivider: { width: 1, backgroundColor: colors.border },
-    vitalHDivider: { height: 1, backgroundColor: colors.border },
-    vitalLabel: {
-      fontSize: Typography.xs,
-      color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-      marginBottom: 4,
-    },
-    vitalValRow: {
+    metricRow: {
       flexDirection: 'row',
-      alignItems: 'flex-end',
-      gap: 3,
-      marginBottom: 6,
-    },
-    vitalValue: {
-      fontSize: Typography.xl,
-      fontWeight: Typography.bold,
-      color: colors.textPrimary,
-      fontVariant: ['tabular-nums'],
-    },
-    vitalDanger: { color: '#FF3B30' },
-    vitalUnit: {
-      fontSize: Typography.sm,
-      color: colors.textMuted,
-      marginBottom: 2,
-    },
-    alertDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: '#FF3B30',
-      marginBottom: 4,
-      marginLeft: 2,
+      gap: Spacing.sm,
+      marginBottom: Spacing.sm,
     },
 
     emptyCard: {
@@ -673,7 +604,7 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.xs,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: 1,
       marginBottom: Spacing.sm,
     },
     imuRow: {
@@ -685,7 +616,6 @@ function makeStyles(colors: AppColors) {
     imuValue: {
       fontSize: Typography.base,
       fontWeight: Typography.semibold,
-      color: colors.textPrimary,
       fontFamily: Typography.mono,
     },
     imuDivider: {
@@ -722,6 +652,7 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.xs,
       color: colors.textMuted,
       fontFamily: Typography.mono,
+      marginTop: 4,
     },
 
     sysCard: {
@@ -743,7 +674,7 @@ function makeStyles(colors: AppColors) {
       fontSize: Typography.xs,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 0.5,
+      letterSpacing: 0.6,
     },
     sysVal: {
       fontSize: Typography.sm,
