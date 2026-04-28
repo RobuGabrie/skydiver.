@@ -165,6 +165,17 @@
 }
 .animate-critical { animation: critical-pulse 1.2s ease-in-out infinite; }
 
+/* Metric flash animation */
+@keyframes metric-flash {
+  0%   { opacity: 1; }
+  30%  { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+.animate-metric-flash { animation: metric-flash 350ms ease-out; }
+
+/* Safe area for mobile bottom nav */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

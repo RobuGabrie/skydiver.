@@ -1,14 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { useSkydiversData } from "@/hooks/use-skydivers-data"
+import { useSkydiversData } from "@/lib/skydivers-context"
+import { MOCK_JUMP_HISTORY, MOCK_OXYGEN_TREND, MOCK_SESSION_STATS } from "@/lib/mock-data"
 import { RiskGauge } from "@/components/analytics/risk-gauge"
 import { GroupVitalsChart, VitalsChart } from "@/components/dashboard/vitals-chart"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
-import { MOCK_JUMP_HISTORY, MOCK_OXYGEN_TREND, MOCK_SESSION_STATS } from "@/lib/mock-data"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar, LineChart, Line, Legend
@@ -97,7 +97,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 }
 
 export default function AnalyticsPage() {
-  const { skydivers } = useSkydiversData()
+  const { skydivers, alerts } = useSkydiversData()
   const { dangers, physio, predictions, statistical, trends } = useAIAnalysis(skydivers)
   const [gemini, setGemini] = useState<GeminiComparisonResponse | null>(null)
   const [geminiLoading, setGeminiLoading] = useState(false)
@@ -136,6 +136,22 @@ export default function AnalyticsPage() {
     Math.round(skydivers.reduce((a, s) => a + fn(s), 0) / n)
 
   const avgRisk = mean(s => s.riskScore)
+
+  // Real session stats derived from live skydivers + alerts
+  const validHr    = skydivers.filter(s => Number.isFinite(s.heartRate) && s.heartRate > 0)
+  const validO2    = skydivers.filter(s => Number.isFinite(s.oxygen)    && s.oxygen    > 0)
+  const validStr   = skydivers.filter(s => Number.isFinite(s.stress)    && s.stress    >= 0)
+  const liveStats = {
+    totalJumps:      skydivers.length,
+    alertsTriggered: alerts.length,
+    avgHeartRate:    validHr.length  ? Math.round(validHr.reduce((a, s) => a + s.heartRate, 0) / validHr.length)  : 0,
+    avgOxygen:       validO2.length  ? Math.round(validO2.reduce((a, s) => a + s.oxygen,    0) / validO2.length)   : 0,
+    avgStress:       validStr.length ? Math.round(validStr.reduce((a, s) => a + s.stress,   0) / validStr.length)  : 0,
+    maxAltitude:     skydivers.length ? Math.max(...skydivers.map(s => s.altitude)) : 0,
+    safetyScore:     skydivers.length ? Math.round(100 - skydivers.reduce((a, s) => a + s.riskScore, 0) / skydivers.length) : 100,
+  }
+  // Fall back to mock data when no real skydivers are connected
+  const sessionStats = skydivers.length > 0 ? liveStats : MOCK_SESSION_STATS
 
   const anomalyData = skydivers.map(s => ({
     name: s.name,
@@ -364,10 +380,10 @@ export default function AnalyticsPage() {
             {/* Summary stats */}
             <div className="grid grid-cols-4 gap-3 mb-4">
               {[
-                { label: "Total Jumps", value: MOCK_SESSION_STATS.totalJumps, icon: Droplets, color: "text-blue-700 dark:text-blue-400" },
-                { label: "Alerts", value: MOCK_SESSION_STATS.alertsTriggered, icon: AlertTriangle, color: "text-red-700 dark:text-red-400" },
-                { label: "Max Alt", value: `${(MOCK_SESSION_STATS.maxAltitude / 1000).toFixed(1)}km`, icon: TrendingDown, color: "text-violet-700 dark:text-violet-400" },
-                { label: "Safety", value: `${MOCK_SESSION_STATS.safetyScore}%`, icon: Shield, color: "text-emerald-700 dark:text-emerald-400" },
+                { label: "Total Jumps", value: sessionStats.totalJumps, icon: Droplets, color: "text-blue-700 dark:text-blue-400" },
+                { label: "Alerts", value: sessionStats.alertsTriggered, icon: AlertTriangle, color: "text-red-700 dark:text-red-400" },
+                { label: "Max Alt", value: `${(sessionStats.maxAltitude / 1000).toFixed(1)}km`, icon: TrendingDown, color: "text-violet-700 dark:text-violet-400" },
+                { label: "Safety", value: `${sessionStats.safetyScore}%`, icon: Shield, color: "text-emerald-700 dark:text-emerald-400" },
               ].map(s => (
                 <div key={s.label} className="p-2.5 rounded-lg bg-muted/30 border border-border text-center">
                   <s.icon className={cn("w-4 h-4 mx-auto mb-1", s.color)} />
@@ -536,8 +552,6 @@ export default function AnalyticsPage() {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="font-mono text-xs h-5 px-2">
                       {gemini?.provider === "gemini" ? gemini.model : "fallback"}
-                    </Badge>
-                    <Badge variant="outline" className={cn("font-mono text-xs h-5 px-2", gemini && gemini.confidence > 70 ? "border-emerald-500/30 text-emerald-400" : gemini && gemini.confidence > 50 ? "border-amber-500/30 text-amber-400" : "border-border text-muted-foreground")}>
                     </Badge>
                     <Badge variant="outline" className={cn("font-mono text-xs h-5 px-2", gemini && gemini.confidence > 70 ? "border-emerald-500/30 text-emerald-700 dark:text-emerald-400" : gemini && gemini.confidence > 50 ? "border-amber-500/30 text-amber-700 dark:text-amber-400" : "border-border text-muted-foreground")}>
                       {gemini ? `${gemini.confidence}% confidence` : "pending"}

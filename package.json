@@ -3,5 +3,12 @@
   "private": true,
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "scripts": {
+    "build": "bash scripts/build-all.sh",
+    "build:web": "bash scripts/build-all.sh web",
+    "build:mobile": "bash scripts/build-all.sh mobile",
+    "build:mobile:eas": "bash scripts/build-all.sh mobile --eas",
+    "build:mobile:eas-prod": "bash scripts/build-all.sh mobile --eas-prod"
+  }
 }

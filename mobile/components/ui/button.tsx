@@ -5,14 +5,14 @@ import { cn } from '~/lib/utils'
 import { TextClassContext } from '~/components/ui/text'
 
 const buttonVariants = cva(
-  'group shrink-0 flex-row items-center justify-center gap-2 rounded-xl shadow-none',
+  'group shrink-0 flex-row items-center justify-center gap-2 rounded-2xl shadow-none',
   {
     variants: {
       variant: {
-        default: 'bg-primary active:opacity-90 shadow-sm shadow-black/5',
-        destructive: 'bg-destructive active:opacity-90 shadow-sm shadow-black/5',
-        outline: 'border-border bg-background active:bg-accent border shadow-sm shadow-black/5',
-        secondary: 'bg-secondary active:opacity-80 shadow-sm shadow-black/5',
+        default: 'bg-primary active:opacity-90 shadow-sm shadow-sky-500/20',
+        destructive: 'bg-destructive active:opacity-90 shadow-sm shadow-red-500/20',
+        outline: 'border-border bg-background/90 active:bg-accent border shadow-sm shadow-black/10',
+        secondary: 'bg-secondary/90 active:opacity-80 shadow-sm shadow-black/10',
         ghost: 'active:bg-accent',
         link: '',
       },

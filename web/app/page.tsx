@@ -1,11 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { useSkydiversData } from "@/hooks/use-skydivers-data"
+import { useSkydiversData } from "@/lib/skydivers-context"
 import { SkydiverCard } from "@/components/dashboard/skydiver-card"
 import { AlertFeed } from "@/components/dashboard/alert-feed"
 import { StatCard } from "@/components/dashboard/stat-card"
 import { VitalsChart, AltitudeChart } from "@/components/dashboard/vitals-chart"
+import { JumpPhaseTimeline } from "@/components/dashboard/jump-phase-timeline"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -16,31 +18,78 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAIAnalysis } from "@/hooks/use-ai-analysis"
+import { useState, useEffect } from "react"
 
-function isDetectedVital(value: number, kind: "heart" | "oxygen") {
-  if (!Number.isFinite(value)) return false
-  return value !== 0
+function isDetectedVital(value: number) {
+  return Number.isFinite(value) && value !== 0
+}
+
+function SkeletonCards() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {[0, 1].map(i => (
+        <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="w-10 h-10 rounded-full" />
+            <div className="space-y-1.5 flex-1">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-16 w-full rounded-lg" />
+          <div className="grid grid-cols-2 gap-1.5">
+            <Skeleton className="h-9 rounded-md" />
+            <Skeleton className="h-9 rounded-md" />
+            <Skeleton className="h-9 rounded-md" />
+            <Skeleton className="h-9 rounded-md" />
+          </div>
+          <Skeleton className="h-2 w-full rounded-full" />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function DashboardPage() {
   const { skydivers, alerts, unacknowledgedAlerts, criticalAlerts, acknowledgeAlert, acknowledgeAll } = useSkydiversData()
   const { dangers, physio, predictions } = useAIAnalysis(skydivers)
+  const [loaded, setLoaded] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const activeJumpers = skydivers.filter(s => s.status !== "landed" && s.status !== "standby")
-  const alertSkydivers = skydivers.filter(s => s.status === "alert")
-  const detectedOxygen = skydivers.filter(s => isDetectedVital(s.oxygen, "oxygen")).map(s => s.oxygen)
-  const detectedHeartRate = skydivers.filter(s => isDetectedVital(s.heartRate, "heart")).map(s => s.heartRate)
-  const avgOxygen = detectedOxygen.length
+  // Mark loaded after first paint so skeletons show on cold start
+  useEffect(() => {
+    const t = setTimeout(() => setLoaded(true), 600)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Auto-select: prefer the most active / highest-risk skydiver
+  useEffect(() => {
+    if (!skydivers.length) return
+    const best =
+      skydivers.find(s => s.status === "alert") ??
+      skydivers.find(s => s.status === "freefall") ??
+      skydivers.find(s => s.status === "canopy_open") ??
+      skydivers[0]
+    setSelectedId(prev => prev ?? best.id)
+  }, [skydivers])
+
+  const selectedSkydiver = skydivers.find(s => s.id === selectedId) ?? skydivers[0] ?? null
+
+  const activeJumpers    = skydivers.filter(s => s.status !== "landed" && s.status !== "standby")
+  const alertSkydivers   = skydivers.filter(s => s.status === "alert")
+  const detectedOxygen   = skydivers.filter(s => isDetectedVital(s.oxygen)).map(s => s.oxygen)
+  const detectedHeartRate= skydivers.filter(s => isDetectedVital(s.heartRate)).map(s => s.heartRate)
+  const avgOxygen     = detectedOxygen.length
     ? Math.round(detectedOxygen.reduce((a, n) => a + n, 0) / detectedOxygen.length)
     : 0
-  const avgHeartRate = detectedHeartRate.length
+  const avgHeartRate  = detectedHeartRate.length
     ? Math.round(detectedHeartRate.reduce((a, n) => a + n, 0) / detectedHeartRate.length)
     : 0
-  const selectedSkydiver = skydivers.find(s => s.id === "3") ?? skydivers[0] ?? null
 
-  const criticalDangers = dangers.filter(d => d.severity === "critical" && d.confidence > 0)
-  const criticalPredictions = predictions.filter(p => p.severity === "critical")
-  const normalPhysio = physio.find(p => p.label === "Normal Physiology")
+  const criticalDangers  = dangers.filter(d => d.severity === "critical" && d.confidence > 0)
+  const criticalPred     = predictions.filter(p => p.severity === "critical")
+  const normalPhysio     = physio.find(p => p.label === "Normal Physiology")
 
   return (
     <div className="p-6 min-h-screen">
@@ -54,7 +103,9 @@ export default function DashboardPage() {
           {criticalAlerts.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/30 rounded-lg animate-critical">
               <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
-              <span className="text-sm text-red-600 dark:text-red-400 font-semibold">{criticalAlerts.length} CRITICAL</span>
+              <span className="text-sm text-red-600 dark:text-red-400 font-semibold">
+                {criticalAlerts.length} CRITICAL
+              </span>
             </div>
           )}
           <div className="flex items-center gap-1.5 text-sm">
@@ -66,36 +117,18 @@ export default function DashboardPage() {
 
       {/* Stat row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          icon={Users}
-          label="Active Jumpers"
-          value={activeJumpers.length}
-          unit={`/ ${skydivers.length}`}
-          color="text-blue-600 dark:text-blue-400"
-          glow={activeJumpers.length > 0 ? "blue" : undefined}
-        />
-        <StatCard
-          icon={AlertTriangle}
-          label="Active Alerts"
-          value={unacknowledgedAlerts.length}
-          trend={criticalAlerts.length > 0 ? { value: criticalAlerts.length, label: "critical" } : undefined}
-          color={unacknowledgedAlerts.length > 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}
-          glow={criticalAlerts.length > 0 ? "red" : undefined}
-        />
-        <StatCard
-          icon={Activity}
-          label="Avg Heart Rate"
-          value={avgHeartRate}
-          unit="bpm"
-          color="text-rose-600 dark:text-rose-400"
-        />
-        <StatCard
-          icon={Shield}
-          label="Avg O₂ Saturation"
-          value={avgOxygen}
-          unit="%"
-          color={avgOxygen >= 95 ? "text-cyan-600 dark:text-cyan-400" : "text-amber-600 dark:text-amber-400"}
-        />
+        {!loaded ? (
+          <>
+            {[0,1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          </>
+        ) : (
+          <>
+            <StatCard icon={Users}         label="Active Jumpers" value={activeJumpers.length}           unit={`/ ${skydivers.length}`} color="text-blue-600 dark:text-blue-400" glow={activeJumpers.length > 0 ? "blue" : undefined} />
+            <StatCard icon={AlertTriangle} label="Active Alerts"  value={unacknowledgedAlerts.length}    trend={criticalAlerts.length > 0 ? { value: criticalAlerts.length, label: "critical" } : undefined} color={unacknowledgedAlerts.length > 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"} glow={criticalAlerts.length > 0 ? "red" : undefined} />
+            <StatCard icon={Activity}      label="Avg Heart Rate" value={avgHeartRate}                   unit="bpm" color="text-rose-600 dark:text-rose-400" />
+            <StatCard icon={Shield}        label="Avg O₂ Sat"     value={avgOxygen}                      unit="%" color={avgOxygen >= 95 ? "text-cyan-600 dark:text-cyan-400" : "text-amber-600 dark:text-amber-400"} />
+          </>
+        )}
       </div>
 
       {/* Main 2-col layout */}
@@ -103,34 +136,68 @@ export default function DashboardPage() {
 
         {/* Left: skydivers */}
         <div className="xl:col-span-2 space-y-4">
-          {alertSkydivers.length > 0 && (
-            <div>
+
+          {/* Alert-status skydivers */}
+          {!loaded ? (
+            <SkeletonCards />
+          ) : (
+            <>
+              {alertSkydivers.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <h2 className="text-sm font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+                      Requires Immediate Attention
+                    </h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {alertSkydivers.map(s => (
+                      <div
+                        key={s.id}
+                        onClick={() => setSelectedId(s.id)}
+                        className={cn("cursor-pointer rounded-xl transition-all duration-150 ring-2",
+                          selectedId === s.id ? "ring-primary/60" : "ring-transparent hover:ring-border"
+                        )}
+                      >
+                        <SkydiverCard skydiver={s} />
+                      </div>
+                    ))}
+                  </div>
+                  <Separator className="my-4" />
+                </div>
+              )}
+
+              {/* All skydivers */}
               <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                <h2 className="text-sm font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
-                  Requires Immediate Attention
-                </h2>
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold text-foreground">All Skydivers</h2>
+                <Badge variant="secondary" className="text-sm font-mono">{skydivers.length}</Badge>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {alertSkydivers.map(s => <SkydiverCard key={s.id} skydiver={s} />)}
+                {skydivers.filter(s => s.status !== "alert").map(s => (
+                  <div
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    className={cn("cursor-pointer rounded-xl transition-all duration-150 ring-2",
+                      selectedId === s.id ? "ring-primary/60" : "ring-transparent hover:ring-border"
+                    )}
+                  >
+                    <SkydiverCard skydiver={s} />
+                  </div>
+                ))}
               </div>
-              <Separator className="my-4" />
-            </div>
+            </>
           )}
 
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold text-foreground">All Skydivers</h2>
-            <Badge variant="secondary" className="text-sm font-mono">{skydivers.length}</Badge>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {skydivers.filter(s => s.status !== "alert").map(s => (
-              <SkydiverCard key={s.id} skydiver={s} />
-            ))}
-          </div>
-
-          {/* Detail chart */}
-          {selectedSkydiver ? (
+          {/* Detail chart for selected skydiver */}
+          {!loaded ? (
+            <Card className="bg-card border-border mt-4">
+              <CardContent className="p-4 space-y-3">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-[220px] w-full rounded-lg" />
+              </CardContent>
+            </Card>
+          ) : selectedSkydiver ? (
             <Card className="bg-card border-border mt-4">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -146,12 +213,13 @@ export default function DashboardPage() {
                     {selectedSkydiver.status.replace("_", " ").toUpperCase()}
                   </Badge>
                 </div>
+                <JumpPhaseTimeline phases={selectedSkydiver.phaseHistory} />
               </CardHeader>
               <CardContent className="pb-4">
                 <Tabs defaultValue="vitals">
                   <TabsList className="bg-muted/50">
                     <TabsTrigger value="vitals" className="text-sm">Vitals</TabsTrigger>
-                    <TabsTrigger value="altitude" className="text-sm">Altitude</TabsTrigger>
+                    <TabsTrigger value="altitude" className="text-sm">Altitude & V-Speed</TabsTrigger>
                   </TabsList>
                   <TabsContent value="vitals" className="mt-4">
                     <VitalsChart data={selectedSkydiver.vitalHistory} />
@@ -193,11 +261,17 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="pb-4">
-              <AlertFeed
-                alerts={alerts}
-                onAcknowledge={acknowledgeAlert}
-                onAcknowledgeAll={acknowledgeAll}
-              />
+              {!loaded ? (
+                <div className="space-y-2">
+                  {[0,1,2].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}
+                </div>
+              ) : (
+                <AlertFeed
+                  alerts={alerts}
+                  onAcknowledge={acknowledgeAlert}
+                  onAcknowledgeAll={acknowledgeAll}
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -210,37 +284,47 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4 space-y-3">
-              {criticalDangers.map(d => (
-                <div key={d.label + d.skydiver} className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-400">{d.label} — {d.skydiver}</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{d.detail}</p>
-                  </div>
+              {!loaded ? (
+                <div className="space-y-2">
+                  {[0,1].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)}
                 </div>
-              ))}
-              {criticalPredictions.map(p => (
-                <div key={p.label} className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <TrendingDown className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">{p.label}</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{p.desc} — {p.action}.</p>
-                  </div>
-                </div>
-              ))}
-              {normalPhysio && (
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                  <Shield className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{normalPhysio.skydiver} — Normal</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{normalPhysio.detail}</p>
-                  </div>
-                </div>
+              ) : (
+                <>
+                  {criticalDangers.map(d => (
+                    <div key={d.label + d.skydiver} className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                      <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-red-700 dark:text-red-400">{d.label} — {d.skydiver}</p>
+                        <p className="text-sm text-muted-foreground mt-0.5">{d.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {criticalPred.map(p => (
+                    <div key={p.label} className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <TrendingDown className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">{p.label}</p>
+                        <p className="text-sm text-muted-foreground mt-0.5">{p.desc} — {p.action}.</p>
+                      </div>
+                    </div>
+                  ))}
+                  {normalPhysio && (
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      <Shield className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">{normalPhysio.skydiver} — Normal</p>
+                        <p className="text-sm text-muted-foreground mt-0.5">{normalPhysio.detail}</p>
+                      </div>
+                    </div>
+                  )}
+                  {criticalDangers.length === 0 && criticalPred.length === 0 && !normalPhysio && (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      No active skydivers — connect a device to see AI analysis.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground text-right font-mono">AI analyzed · live</p>
+                </>
               )}
-              {criticalDangers.length === 0 && criticalPredictions.length === 0 && !normalPhysio && (
-                <p className="text-xs text-muted-foreground text-center py-2">No active skydivers — connect a device to see AI analysis.</p>
-              )}
-              <p className="text-xs text-muted-foreground text-right font-mono">AI analyzed · live</p>
             </CardContent>
           </Card>
         </div>

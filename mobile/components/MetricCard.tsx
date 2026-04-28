@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useEffect, useState, memo } from 'react'
-import { View, Text, StyleSheet } from 'react-native'
+import { View, Text, StyleSheet, Pressable } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useTheme } from '../lib/ThemeContext'
-import { AppColors, Typography, Spacing, Radius } from '../lib/theme'
+import { AppColors, Typography, Spacing, Radius, TouchTarget } from '../lib/theme'
 import { Progress } from '~/components/ui/progress'
+import type { VitalPoint } from '../lib/types'
 
 interface Props {
   label: string
@@ -14,13 +15,16 @@ interface Props {
   large?: boolean
   progress?: number
   icon?: React.ComponentProps<typeof Ionicons>['name']
+  history?: VitalPoint[]
   children?: React.ReactNode
 }
 
-export const MetricCard = memo(function MetricCard({ label, value, unit, color, warning, large, progress, icon, children }: Props) {
+export const MetricCard = memo(function MetricCard({ label, value, unit, color, warning, large, progress, icon, history, children }: Props) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const accentColor = warning ? colors.danger : (color ?? colors.primary)
+  const [expanded, setExpanded] = useState(false)
+  const canExpand = Boolean(history && history.length >= 2)
 
   const prevValue = useRef(value)
   const [pulsing, setPulsing] = useState(false)
@@ -35,21 +39,33 @@ export const MetricCard = memo(function MetricCard({ label, value, unit, color, 
   }, [value])
 
   return (
-    <View
+    <Pressable
+      onPress={() => {
+        if (canExpand) setExpanded(prev => !prev)
+      }}
       style={[
         styles.card,
-        warning
-          ? { borderColor: colors.danger + '50', backgroundColor: colors.dangerDim }
-          : { borderColor: colors.border },
+        { borderColor: colors.border, backgroundColor: colors.surfaceGlass },
       ]}
+      accessibilityRole={canExpand ? 'button' : undefined}
+      accessibilityLabel={`${label}${canExpand ? ', tap to expand history' : ''}`}
     >
-      {icon && (
-        <View style={[styles.iconBox, { backgroundColor: accentColor + '18' }]}>
-          <Ionicons name={icon} size={14} color={accentColor} />
+      <View style={styles.headerRow}>
+        <View style={styles.headerLeft}>
+          {icon && (
+            <View style={[styles.iconBox, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
+              <Ionicons name={icon} size={16} color={accentColor} />
+            </View>
+          )}
+          <Text style={styles.label}>{label}</Text>
         </View>
-      )}
 
-      <Text style={styles.label}>{label}</Text>
+        {canExpand && (
+          <View style={styles.chevronWrap}>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+          </View>
+        )}
+      </View>
 
       <View style={[styles.valueRow, pulsing && styles.valueRowPulse]}>
         <Text style={[styles.value, large && styles.valueLarge, { color: accentColor }]}>
@@ -68,34 +84,70 @@ export const MetricCard = memo(function MetricCard({ label, value, unit, color, 
         />
       )}
 
-      {children}
-    </View>
+      {expanded && canExpand && (
+        <View style={styles.expandedSection}>
+          {children ? <View style={styles.historyWrap}>{children}</View> : null}
+          <View style={styles.rangeRow}>
+            <View style={[styles.rangeChip, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
+              <Text style={[styles.rangeLabel, { color: colors.textMuted }]}>Min</Text>
+              <Text style={[styles.rangeValue, { color: colors.textPrimary }]}>
+                {Math.min(...(history ?? []).map(point => point.value)).toFixed(0)}
+              </Text>
+            </View>
+            <View style={[styles.rangeChip, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
+              <Text style={[styles.rangeLabel, { color: colors.textMuted }]}>Now</Text>
+              <Text style={[styles.rangeValue, { color: accentColor }]}>{String(value)}</Text>
+            </View>
+            <View style={[styles.rangeChip, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
+              <Text style={[styles.rangeLabel, { color: colors.textMuted }]}>Max</Text>
+              <Text style={[styles.rangeValue, { color: colors.textPrimary }]}>
+                {Math.max(...(history ?? []).map(point => point.value)).toFixed(0)}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </Pressable>
   )
 })
 
 function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     card: {
-      backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.md,
+      backgroundColor: colors.surfaceGlass,
+      borderRadius: Radius.lg,
       borderWidth: 1,
       padding: Spacing.md,
       flex: 1,
-      gap: 4,
+      gap: 8,
+      boxShadow: '0 10px 28px rgba(3, 10, 22, 0.22)',
+      minHeight: TouchTarget,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: Spacing.sm,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
     },
     iconBox: {
-      width: 30,
-      height: 30,
-      borderRadius: Radius.sm,
+      width: 36,
+      height: 36,
+      borderRadius: Radius.md,
+      borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: 2,
     },
     label: {
       fontSize: Typography.xs,
       color: colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: 1,
       fontWeight: Typography.medium,
     },
     valueRow: {
@@ -112,6 +164,7 @@ function makeStyles(colors: AppColors) {
       fontFamily: Typography.mono,
       fontVariant: ['tabular-nums'],
       lineHeight: Typography.xl * 1.1,
+      letterSpacing: 0.3,
     },
     valueLarge: {
       fontSize: Typography.hero,
@@ -122,6 +175,42 @@ function makeStyles(colors: AppColors) {
       fontWeight: Typography.medium,
       fontFamily: Typography.mono,
       marginBottom: 3,
+    },
+    chevronWrap: {
+      width: TouchTarget,
+      height: TouchTarget,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    expandedSection: {
+      gap: Spacing.sm,
+    },
+    historyWrap: {
+      paddingTop: 2,
+    },
+    rangeRow: {
+      flexDirection: 'row',
+      gap: Spacing.xs,
+    },
+    rangeChip: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: Radius.md,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      gap: 2,
+    },
+    rangeLabel: {
+      fontSize: 9,
+      textTransform: 'uppercase',
+      letterSpacing: 0.9,
+      fontWeight: Typography.semibold,
+    },
+    rangeValue: {
+      fontSize: Typography.sm,
+      fontWeight: Typography.bold,
+      fontFamily: Typography.mono,
+      fontVariant: ['tabular-nums'],
     },
   })
 }

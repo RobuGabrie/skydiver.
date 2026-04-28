@@ -39,7 +39,7 @@ export function usePhoneLocation(active = true) {
           {
             accuracy: Location.Accuracy.BestForNavigation,
             timeInterval: 1000,
-            distanceInterval: 0,
+            distanceInterval: 2,
           },
           (loc) => {
             if (cancelled) return

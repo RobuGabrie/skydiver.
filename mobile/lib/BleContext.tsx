@@ -96,6 +96,10 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
   const lastSlowSeqRef = useRef<number | null>(null)
   const lastAltRef = useRef<number | null>(null)
   const lastAltTimeRef = useRef<number | null>(null)
+  const imuVSpeedRef = useRef(0)
+  const lastImuTimeRef = useRef<number | null>(null)
+  const smoothedVSpeedRef = useRef(0)
+  const lastPublishedVSpeedRef = useRef<number | null>(null)
   const alertCooldownsRef = useRef(new Map<string, number>())
   const alertSeqRef = useRef(0)
 
@@ -150,7 +154,7 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
     // Derive vertical speed from consecutive GPS altitude readings.
     // SlowPacket arrives at 4 Hz; require ≥0.5 s gap to keep noise low.
     const alt = loc?.altitude ?? null
-    let verticalSpeed: number | undefined
+    let gpsVerticalSpeed: number | undefined
     if (
       alt !== null &&
       lastAltRef.current !== null &&
@@ -158,13 +162,29 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
     ) {
       const dt = (nowMs - lastAltTimeRef.current) / 1000
       if (dt >= 0.5) {
-        verticalSpeed = (alt - lastAltRef.current) / dt
+        gpsVerticalSpeed = (alt - lastAltRef.current) / dt
         lastAltRef.current = alt
         lastAltTimeRef.current = nowMs
       }
     } else if (alt !== null) {
       lastAltRef.current = alt
       lastAltTimeRef.current = nowMs
+    }
+
+    // Fall back to IMU-integrated vertical speed when GPS altitude is unavailable.
+    const rawVSpeed: number | undefined = gpsVerticalSpeed !== undefined
+      ? gpsVerticalSpeed
+      : (lastImuTimeRef.current !== null ? imuVSpeedRef.current : undefined)
+
+    // EMA smoothing (α=0.25) + 0.5 m/s dead-band to suppress noise bursts.
+    let verticalSpeed: number | undefined
+    if (rawVSpeed !== undefined) {
+      smoothedVSpeedRef.current = smoothedVSpeedRef.current * 0.75 + rawVSpeed * 0.25
+      const prev = lastPublishedVSpeedRef.current
+      if (prev === null || Math.abs(smoothedVSpeedRef.current - prev) >= 0.5) {
+        verticalSpeed = Math.round(smoothedVSpeedRef.current * 10) / 10
+        lastPublishedVSpeedRef.current = verticalSpeed
+      }
     }
 
     const event: SlowTelemetryEvent = {
@@ -405,6 +425,18 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
         const pkt = parseFastPacket(bytes)
         if (pkt) {
           fastPacketRef.current = pkt
+          // Integrate world-frame vertical acceleration for IMU-based speed fallback.
+          const { quat0: qw, quat1: qx, quat2: qy, quat3: qz, accelX, accelY, accelZ } = pkt
+          const worldZ = 2*(qx*qz - qw*qy)*accelX + 2*(qy*qz + qw*qx)*accelY + (1 - 2*(qx*qx + qy*qy))*accelZ
+          const vertAccelMs2 = (worldZ - 1.0) * 9.81
+          const nowMs = Date.now()
+          if (lastImuTimeRef.current !== null) {
+            const dt = (nowMs - lastImuTimeRef.current) / 1000
+            if (dt > 0 && dt < 1.0) {
+              imuVSpeedRef.current = imuVSpeedRef.current * Math.exp(-dt / 0.5) + vertAccelMs2 * dt
+            }
+          }
+          lastImuTimeRef.current = nowMs
         }
       },
     )
@@ -441,6 +473,10 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
       lastSlowSeqRef.current = null
       lastAltRef.current = null
       lastAltTimeRef.current = null
+      imuVSpeedRef.current = 0
+      lastImuTimeRef.current = null
+      smoothedVSpeedRef.current = 0
+      lastPublishedVSpeedRef.current = null
       setConnectedId(null)
       setSlowPacket(null)
       setRssi(0)
@@ -464,6 +500,10 @@ export function BleProvider({ children }: { children: React.ReactNode }) {
     lastSlowSeqRef.current = null
     lastAltRef.current = null
     lastAltTimeRef.current = null
+    imuVSpeedRef.current = 0
+    lastImuTimeRef.current = null
+    smoothedVSpeedRef.current = 0
+    lastPublishedVSpeedRef.current = null
     setConnectedId(null)
     setSlowPacket(null)
     setRssi(0)

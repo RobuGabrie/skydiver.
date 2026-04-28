@@ -30,6 +30,12 @@ export interface AltitudePoint {
   verticalSpeed: number
 }
 
+/** A status transition event used by the phase timeline */
+export interface PhaseEvent {
+  status: SkydiverStatus
+  enteredAt: string  // ISO timestamp
+}
+
 export interface Skydiver {
   id: string
   name: string
@@ -48,8 +54,12 @@ export interface Skydiver {
   lastUpdate: Date
   vitalHistory: VitalPoint[]
   altitudeHistory: AltitudePoint[]
+  phaseHistory: PhaseEvent[]
   riskScore: number
   connectedVia: "ble" | "wifi" | "offline"
+  /** GPS coordinates from phone, if available */
+  lat?: number | null
+  lon?: number | null
 }
 
 export interface Alert {
@@ -82,4 +92,14 @@ export interface AIAnalysis {
   predictions: string[]
   confidence: number
   lastAnalyzed: Date
+}
+
+/** Persisted alert threshold rule (used in alert rules panel) */
+export interface AlertRule {
+  id: string
+  label: string
+  active: boolean
+  severity: AlertSeverity
+  threshold?: number
+  unit?: string
 }

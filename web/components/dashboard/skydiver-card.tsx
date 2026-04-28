@@ -2,10 +2,10 @@
 
 import { Skydiver } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { MetricValue } from "@/components/dashboard/metric-value"
 import { cn } from "@/lib/utils"
 import {
   Heart, Droplets, Thermometer, Battery,
@@ -37,7 +37,8 @@ function MetricPill({ icon: Icon, value, unit, color, warning, detected = true }
       <span className={cn("text-sm font-mono font-medium", warning ? "text-red-600 dark:text-red-400" : detected ? "text-foreground" : "text-muted-foreground")}>
         {detected ? (
           <>
-            {value}<span className="text-muted-foreground text-xs ml-0.5">{unit}</span>
+            <MetricValue value={value} className="inline" />
+            <span className="text-muted-foreground text-xs ml-0.5">{unit}</span>
           </>
         ) : (
           "Non detected"
@@ -122,15 +123,16 @@ export function SkydiverCard({ skydiver }: { skydiver: Skydiver }) {
           <div className="flex-1">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">Altitude</p>
             <p className="text-2xl font-mono font-bold text-foreground leading-none">
-              {skydiver.altitude.toLocaleString()}
+              <MetricValue value={skydiver.altitude.toLocaleString()} className="inline" />
               <span className="text-sm text-muted-foreground ml-1">m</span>
             </p>
           </div>
           <div className="w-px h-10 bg-border" />
           <div className="flex-1">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">V-Speed</p>
-            <p className={cn("text-lg font-mono font-bold leading-none", skydiver.verticalSpeed < -60 ? "text-amber-600 dark:text-amber-400" : "text-foreground")}>
-              {skydiver.verticalSpeed}<span className="text-sm text-muted-foreground ml-1">m/s</span>
+            <p className={cn("text-lg font-mono font-bold leading-none", Math.abs(skydiver.verticalSpeed) > 60 ? "text-amber-600 dark:text-amber-400" : "text-foreground")}>
+              <MetricValue value={Math.abs(Math.round(skydiver.verticalSpeed))} className="inline" />
+              <span className="text-sm text-muted-foreground ml-1">m/s</span>
             </p>
           </div>
           <div className="w-px h-10 bg-border" />

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
-import type { Skydiver, Alert, VitalPoint, AltitudePoint, SkydiverStatus } from "@/lib/types"
+import type { Skydiver, Alert, VitalPoint, AltitudePoint, PhaseEvent, SkydiverStatus } from "@/lib/types"
 import type { CurrentSkydiverRow, AlertEventRow } from "@skydiver/shared"
 import { supabase } from "@/lib/supabase-client"
 
@@ -95,6 +95,7 @@ function rowToSkydiver(
   row: CurrentSkydiverRow,
   vitalHistory: VitalPoint[],
   altitudeHistory: AltitudePoint[],
+  phaseHistory: PhaseEvent[] = [],
 ): Skydiver {
   return {
     id:             row.device_id,
@@ -103,7 +104,7 @@ function rowToSkydiver(
     status:         (row.status as SkydiverStatus) || "standby",
     jumpNumber:     0,
     altitude:       row.altitude_m       ?? 0,
-    verticalSpeed:  row.vertical_speed_ms ?? 0,
+    verticalSpeed:  Math.round(row.vertical_speed_ms ?? 0),
     heartRate:      row.heart_rate_bpm   ?? Number.NaN,
     oxygen:         row.spo2_pct         ?? Number.NaN,
     stress:         row.stress_pct       ?? Number.NaN,
@@ -114,8 +115,11 @@ function rowToSkydiver(
     lastUpdate:     row.last_update ? new Date(row.last_update) : new Date(),
     vitalHistory,
     altitudeHistory,
+    phaseHistory,
     riskScore:      computeRiskScore(row),
     connectedVia:   connVia(row.last_update),
+    lat:            row.phone_lat  ?? null,
+    lon:            row.phone_lon  ?? null,
   }
 }
 
@@ -159,7 +163,7 @@ export function useSkydivers() {
   const [initialLoaded, setInitialLoaded] = useState(false)
 
   const historyRef = useRef(
-    new Map<string, { vital: VitalPoint[]; altitude: AltitudePoint[] }>()
+    new Map<string, { vital: VitalPoint[]; altitude: AltitudePoint[]; phase: PhaseEvent[] }>()
   )
   const skydiverNamesRef = useRef(new Map<string, string>())
 
@@ -200,10 +204,15 @@ export function useSkydivers() {
         }
         const mapped = Array.from(seen.values()).map(raw => {
           const r = sanitizeVitals(raw)
-          const hist = { vital: [] as VitalPoint[], altitude: [] as AltitudePoint[] }
+          const initialStatus = (r.status as SkydiverStatus) || "standby"
+          const hist = {
+            vital: [] as VitalPoint[],
+            altitude: [] as AltitudePoint[],
+            phase: [{ status: initialStatus, enteredAt: r.last_update ?? new Date().toISOString() }] as PhaseEvent[],
+          }
           historyRef.current.set(r.device_id, hist)
           skydiverNamesRef.current.set(r.device_id, r.name)
-          return rowToSkydiver(r, hist.vital, hist.altitude)
+          return rowToSkydiver(r, hist.vital, hist.altitude, hist.phase)
         })
         setSkydivers(mapped)
       }
@@ -235,7 +244,7 @@ export function useSkydivers() {
     if (!initialLoaded) return
 
     const channel = supabase
-      .channel(`skydiver-live:${deviceSetKey || "none"}`)
+      .channel(`skydiver-live:${deviceSetKey || "none"}:${Date.now()}`)
       .on(
         // Session opened → fetch and add skydiver so filtered handlers can rebuild.
         "postgres_changes",
@@ -258,6 +267,7 @@ export function useSkydivers() {
             const hist = historyRef.current.get(r.device_id) ?? {
               vital: [] as VitalPoint[],
               altitude: [] as AltitudePoint[],
+              phase: [{ status: ((r.status as SkydiverStatus) || "standby"), enteredAt: r.last_update ?? new Date().toISOString() }] as PhaseEvent[],
             }
             historyRef.current.set(r.device_id, hist)
             skydiverNamesRef.current.set(r.device_id, r.name)
@@ -265,7 +275,7 @@ export function useSkydivers() {
             setSkydivers(cur =>
               cur.find(s => s.id === r.device_id)
                 ? cur
-                : [...cur, rowToSkydiver(r, hist.vital, hist.altitude)]
+                : [...cur, rowToSkydiver(r, hist.vital, hist.altitude, hist.phase)]
             )
           })().catch(() => {})
         },
@@ -311,7 +321,11 @@ export function useSkydivers() {
                 if (!data) return
 
                 const r = data as CurrentSkydiverRow
-                const hist = { vital: [] as VitalPoint[], altitude: [] as AltitudePoint[] }
+                const hist = {
+                  vital: [] as VitalPoint[],
+                  altitude: [] as AltitudePoint[],
+                  phase: [{ status: ((r.status as SkydiverStatus) || "standby"), enteredAt: r.last_update ?? new Date().toISOString() }] as PhaseEvent[],
+                }
 
                 historyRef.current.set(r.device_id, hist)
                 skydiverNamesRef.current.set(r.device_id, r.name)
@@ -319,7 +333,7 @@ export function useSkydivers() {
                 setSkydivers(cur =>
                   cur.find(s => s.id === r.device_id)
                     ? cur
-                    : [...cur, rowToSkydiver(r, hist.vital, hist.altitude)]
+                    : [...cur, rowToSkydiver(r, hist.vital, hist.altitude, hist.phase)]
                 )
               })().catch(() => {})
 
@@ -327,8 +341,9 @@ export function useSkydivers() {
             }
 
             const hist = historyRef.current.get(deviceIdFromRow) ?? {
-              vital: [],
-              altitude: [],
+              vital: [] as VitalPoint[],
+              altitude: [] as AltitudePoint[],
+              phase: [] as PhaseEvent[],
             }
 
             const now = row.recorded_at as string
@@ -349,11 +364,19 @@ export function useSkydivers() {
             const newAlt: AltitudePoint = {
               time: now,
               altitude: row.altitude_m ?? existing.altitude,
-              verticalSpeed: row.vertical_speed_ms ?? existing.verticalSpeed,
+              verticalSpeed: Math.round(row.vertical_speed_ms ?? existing.verticalSpeed),
             }
 
             hist.vital = [...hist.vital.slice(-(MAX_HISTORY - 1)), newVital]
             hist.altitude = [...hist.altitude.slice(-(MAX_HISTORY - 1)), newAlt]
+
+            // Track phase transitions
+            const newStatus = deriveStatus(row, existing.status)
+            const lastPhase = hist.phase[hist.phase.length - 1]
+            if (!lastPhase || lastPhase.status !== newStatus) {
+              hist.phase = [...hist.phase.slice(-19), { status: newStatus, enteredAt: now }]
+            }
+
             historyRef.current.set(deviceIdFromRow, hist)
 
             const updatedRow: CurrentSkydiverRow = {
@@ -381,7 +404,7 @@ export function useSkydivers() {
 
             return prev.map(s =>
               s.id === deviceIdFromRow
-                ? rowToSkydiver(updatedRow, hist.vital, hist.altitude)
+                ? rowToSkydiver(updatedRow, hist.vital, hist.altitude, hist.phase)
                 : s
             )
           })
@@ -476,15 +499,17 @@ function isCanopyAccel(row: any): boolean {
 }
 
 function deriveStatus(row: any, fallback: SkydiverStatus): SkydiverStatus {
-  const alt = (row.altitude_m        as number | null) ?? 0
-  const vs  =  row.vertical_speed_ms as number | null
-  const sta = (row.stationary        as boolean | null) ?? false
+  const altRaw = row.altitude_m        as number | null
+  const alt    = altRaw ?? 0
+  const vs     = row.vertical_speed_ms as number | null
+  const sta    = (row.stationary       as boolean | null) ?? false
 
-  if (sta && alt < 30) return "landed"
+  if (sta && altRaw !== null && alt < 30) return "landed"
   if (sta)             return "standby"
-  if (vs !== null && vs < -15) return "freefall"
-  if (vs !== null && vs >= -9 && vs <= -1.5 && gyroMag(row) < 30 && isCanopyAccel(row)) return "canopy_open"
-  if (alt < 30) return "landed"
+  if (vs !== null && vs < -10) return "freefall"
+  if (vs !== null && vs >= -14 && vs <= -0.5 && gyroMag(row) < 30 && isCanopyAccel(row)) return "canopy_open"
+  // Only conclude "landed" from altitude if the sensor actually reported a value
+  if (altRaw !== null && alt < 30) return "landed"
   return fallback
 }
 
@@ -493,7 +518,7 @@ function deriveParachute(row: any): boolean {
   const alt = (row.altitude_m        as number | null) ?? 0
   const sta = (row.stationary        as boolean | null) ?? false
   return vs !== null
-    && vs >= -9 && vs <= -1.5
+    && vs >= -14 && vs <= -0.5
     && alt > 10 && alt < 1500
     && !sta
     && gyroMag(row) < 30

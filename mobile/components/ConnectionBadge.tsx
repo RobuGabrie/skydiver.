@@ -36,9 +36,9 @@ export function ConnectionBadge({ mode, bleConnected = true, deviceRssi }: Props
   const statusLabel = mode === 'offline' ? 'Disconnected' : isActive ? 'Live' : 'Searching'
 
   return (
-    <View style={[styles.container, { borderColor: accentColor + '35' }]}>
-      <View style={[styles.iconWrap, { backgroundColor: accentColor + '15' }]}>
-        <Ionicons name={cfg.icon} size={14} color={accentColor} />
+    <View style={[styles.container, { borderColor: accentColor + '45' }]}>
+      <View style={[styles.iconWrap, { backgroundColor: accentColor + '18' }]}>
+        <Ionicons name={cfg.icon} size={15} color={accentColor} />
       </View>
 
       <View style={styles.infoCol}>
@@ -60,8 +60,9 @@ export function ConnectionBadge({ mode, bleConnected = true, deviceRssi }: Props
               style={[
                 styles.bar,
                 {
-                  height: 4 + bar * 3,
+                  height: 5 + bar * 3,
                   backgroundColor: bar <= signalBars ? accentColor : colors.border,
+                  opacity: bar <= signalBars ? 1 : 0.45,
                 },
               ]}
             />
@@ -78,28 +79,29 @@ function makeStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: Spacing.sm,
-      paddingHorizontal: 10,
+      paddingHorizontal: 12,
       paddingVertical: 8,
-      borderRadius: Radius.md,
+      borderRadius: Radius.xl,
       borderWidth: 1,
-      backgroundColor: colors.surface,
-      minHeight: 46,
+      backgroundColor: colors.surfaceGlass,
+      minHeight: 48,
+      boxShadow: '0 2px 8px rgba(2, 10, 22, 0.10)',
     },
     iconWrap: {
-      width: 26,
-      height: 26,
-      borderRadius: Radius.sm,
+      width: 30,
+      height: 30,
+      borderRadius: Radius.md,
       alignItems: 'center',
       justifyContent: 'center',
     },
     infoCol: {
-      gap: 1,
-      minWidth: 92,
+      gap: 2,
+      minWidth: 90,
     },
     modeLabel: {
       fontSize: Typography.xs,
       fontWeight: Typography.bold,
-      letterSpacing: 0.5,
+      letterSpacing: 0.7,
       textTransform: 'uppercase',
     },
     subRow: {
@@ -108,9 +110,9 @@ function makeStyles(colors: AppColors) {
       gap: 5,
     },
     dot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
+      width: 7,
+      height: 7,
+      borderRadius: 4,
     },
     status: {
       fontSize: 10,
@@ -125,10 +127,10 @@ function makeStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'flex-end',
       gap: 2,
-      height: 18,
+      height: 20,
     },
     bar: {
-      width: 3,
+      width: 3.5,
       borderRadius: Radius.full,
     },
   })

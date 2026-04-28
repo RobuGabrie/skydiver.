@@ -147,6 +147,7 @@ export function useSimulation(enabled = true) {
           lastUpdate: new Date(),
           vitalHistory: [...s.vitalHistory.slice(-49), newVitalPoint],
           altitudeHistory: [...s.altitudeHistory.slice(-49), newAltPoint],
+          phaseHistory: s.phaseHistory,
         }
 
         // Compute riskScore from updated values

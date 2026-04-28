@@ -13,9 +13,9 @@ interface Props {
 
 function getTypeConfig(type: AlertItem['type'], colors: AppColors) {
   return {
-    danger:  { bg: colors.dangerDim,  border: colors.danger + '50',  text: colors.danger,  icon: 'alert-circle' as const },
-    warning: { bg: colors.warningDim, border: colors.warning + '50', text: colors.warning, icon: 'warning' as const },
-    info:    { bg: colors.infoDim,    border: colors.primary + '50', text: colors.primary, icon: 'information-circle' as const },
+    danger:  { bg: colors.dangerDim,  border: colors.danger + '55',  text: colors.danger,  icon: 'alert-circle' as const },
+    warning: { bg: colors.warningDim, border: colors.warning + '55', text: colors.warning, icon: 'warning' as const },
+    info:    { bg: colors.infoDim,    border: colors.primary + '55', text: colors.primary, icon: 'information-circle' as const },
   }[type]
 }
 
@@ -27,7 +27,9 @@ export function AlertBanner({ alert, onDismiss }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
       <View style={[styles.stripe, { backgroundColor: cfg.text }]} />
-      <Ionicons name={cfg.icon} size={18} color={cfg.text} style={styles.icon} />
+      <View style={[styles.iconWrap, { backgroundColor: cfg.text + '18' }]}>
+        <Ionicons name={cfg.icon} size={18} color={cfg.text} />
+      </View>
       <View style={styles.body}>
         <Text style={[styles.title, { color: cfg.text }]}>{alert.title}</Text>
         <Text style={styles.message}>{alert.body}</Text>
@@ -49,25 +51,31 @@ function makeStyles(colors: AppColors) {
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      borderRadius: Radius.md,
+      alignItems: 'center',
+      borderRadius: Radius.lg,
       borderWidth: 1,
       marginBottom: Spacing.sm,
       overflow: 'hidden',
+      boxShadow: '0 10px 24px rgba(2, 10, 22, 0.18)',
     },
     stripe: {
-      width: 3,
+      width: 4,
       alignSelf: 'stretch',
     },
-    icon: {
-      marginTop: Spacing.md,
+    iconWrap: {
+      width: 38,
+      height: 38,
+      borderRadius: Radius.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
       marginLeft: Spacing.sm,
+      flexShrink: 0,
     },
     body: {
       flex: 1,
       gap: 3,
-      padding: Spacing.md,
-      paddingLeft: Spacing.sm,
+      paddingVertical: Spacing.sm,
+      paddingHorizontal: Spacing.sm,
     },
     title: {
       fontSize: Typography.sm,
@@ -87,6 +95,7 @@ function makeStyles(colors: AppColors) {
       height: TouchTarget,
       alignItems: 'center',
       justifyContent: 'center',
+      flexShrink: 0,
     },
   })
 }

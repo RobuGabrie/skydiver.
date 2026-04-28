@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react'
+import React, { memo, useMemo, useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { MotiView } from 'moti'
-import Svg, { Circle, Line } from 'react-native-svg'
+import Svg, { Circle } from 'react-native-svg'
 import { useBle } from '../../lib/BleContext'
 import { useConnectivity } from '../../hooks/useConnectivity'
 import { useTheme } from '../../lib/ThemeContext'
@@ -18,7 +18,9 @@ import { usePhoneLocation } from '../../hooks/usePhoneLocation'
 import { ConnectionBadge } from '../../components/ConnectionBadge'
 import { MetricCard } from '../../components/MetricCard'
 import { SparkLine } from '../../components/SparkLine'
-import { Progress } from '~/components/ui/progress'
+import { CockpitBackground } from '../../components/cockpit/CockpitBackground'
+import { EmptyStatePanel } from '../../components/cockpit/EmptyStatePanel'
+import { SectionHeader } from '../../components/cockpit/SectionHeader'
 import { AppColors, Typography, Spacing, Radius } from '../../lib/theme'
 import { formatDuration } from '../../lib/timeUtils'
 import type { FastPacket } from '../../lib/bleProtocol'
@@ -31,15 +33,15 @@ function pushPoint(arr: VitalPoint[], value: number): VitalPoint[] {
 }
 
 function deriveStatus(
-  vSpeed: number,
+  vSpeed: number | null,
   altitude: number | null,
   stationary: number,
 ): SkydiverStatus {
   if (stationary === 1) {
     return altitude !== null && altitude > 200 ? 'standby' : 'landed'
   }
-  if (vSpeed < -15) return 'freefall'
-  if (vSpeed < -2) return 'canopy_open'
+  if (vSpeed !== null && vSpeed < -15) return 'freefall'
+  if (vSpeed !== null && vSpeed < -2) return 'canopy_open'
   if (altitude !== null && altitude < 30) return 'landed'
   return 'standby'
 }
@@ -63,7 +65,6 @@ const motionStyles = StyleSheet.create({
   telemetryCard: {
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     padding: Spacing.md,
     overflow: 'hidden',
     gap: Spacing.sm,
@@ -81,7 +82,6 @@ const motionStyles = StyleSheet.create({
     fontSize: Typography.xs,
     textTransform: 'uppercase',
     letterSpacing: 1.1,
-    color: '#64748B',
     fontWeight: Typography.semibold,
   },
   telemetryValue: {
@@ -94,7 +94,6 @@ const motionStyles = StyleSheet.create({
   telemetrySubtitle: {
     fontSize: Typography.sm,
     lineHeight: Typography.sm * 1.35,
-    color: '#475569',
   },
   telemetryRingWrap: {
     width: 84,
@@ -118,9 +117,7 @@ const motionStyles = StyleSheet.create({
   },
   telemetryChip: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     borderRadius: Radius.md,
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -130,14 +127,12 @@ const motionStyles = StyleSheet.create({
     fontSize: 9,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    color: '#64748B',
     fontWeight: Typography.semibold,
   },
   telemetryChipValue: {
     fontSize: Typography.sm,
     fontFamily: Typography.mono,
     fontWeight: Typography.semibold,
-    color: '#0F172A',
   },
   telemetryBarBlock: {
     gap: 6,
@@ -151,7 +146,6 @@ const motionStyles = StyleSheet.create({
     fontSize: Typography.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.9,
-    color: '#64748B',
     fontWeight: Typography.semibold,
   },
   telemetryBarValue: {
@@ -171,7 +165,7 @@ const motionStyles = StyleSheet.create({
   },
 })
 
-function RingGauge({
+const RingGauge = memo(function RingGauge({
   value,
   size,
   stroke,
@@ -212,119 +206,9 @@ function RingGauge({
       />
     </Svg>
   )
-}
+})
 
-function MotionCube({
-  roll,
-  pitch,
-  yaw,
-  colors,
-}: {
-  roll: number
-  pitch: number
-  yaw: number
-  colors: AppColors
-}) {
-  const width = 250
-  const height = 170
-  const cx = width / 2
-  const cy = height / 2
-  const size = 40
-  const distance = 180
-
-  const rx = clamp(pitch, -80, 80) * Math.PI / 180
-  const ry = clamp(yaw, -180, 180) * Math.PI / 180
-  const rz = clamp(roll, -180, 180) * Math.PI / 180
-
-  const vertices = [
-    [-size, -size, -size],
-    [size, -size, -size],
-    [size, size, -size],
-    [-size, size, -size],
-    [-size, -size, size],
-    [size, -size, size],
-    [size, size, size],
-    [-size, size, size],
-  ] as const
-
-  const edges: Array<[number, number]> = [
-    [0, 1], [1, 2], [2, 3], [3, 0],
-    [4, 5], [5, 6], [6, 7], [7, 4],
-    [0, 4], [1, 5], [2, 6], [3, 7],
-  ]
-
-  function rotate([x, y, z]: readonly number[]) {
-    const cyv = Math.cos(ry)
-    const syv = Math.sin(ry)
-    const cxv = Math.cos(rx)
-    const sxv = Math.sin(rx)
-    const czv = Math.cos(rz)
-    const szv = Math.sin(rz)
-
-    const y1 = y * cxv - z * sxv
-    const z1 = y * sxv + z * cxv
-
-    const x2 = x * cyv + z1 * syv
-    const z2 = -x * syv + z1 * cyv
-
-    const x3 = x2 * czv - y1 * szv
-    const y3 = x2 * szv + y1 * czv
-
-    return { x: x3, y: y3, z: z2 }
-  }
-
-  const projected = vertices.map(v => {
-    const p = rotate(v)
-    const scale = distance / (distance - p.z)
-    return {
-      x: cx + p.x * scale,
-      y: cy + p.y * scale,
-      z: p.z,
-    }
-  })
-
-  return (
-    <View style={{ alignItems: 'center' }}>
-      <Svg width={width} height={height}>
-        {edges.map(([a, b], i) => {
-          const p1 = projected[a]
-          const p2 = projected[b]
-          const avgDepth = (p1.z + p2.z) / 2
-          const strokeOpacity = avgDepth > 0 ? 0.9 : 0.45
-          const stroke = avgDepth > 0 ? colors.primary : colors.textMuted
-          return (
-            <Line
-              key={`${a}-${b}-${i}`}
-              x1={p1.x}
-              y1={p1.y}
-              x2={p2.x}
-              y2={p2.y}
-              stroke={stroke}
-              strokeOpacity={strokeOpacity}
-              strokeWidth={avgDepth > 0 ? 2.2 : 1.4}
-            />
-          )
-        })}
-
-        <Circle cx={cx} cy={cy} r={2.5} fill={colors.warning} />
-      </Svg>
-
-      <View style={{ flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.xs }}>
-        <Text style={{ color: colors.textMuted, fontSize: Typography.xs, fontFamily: Typography.mono }}>
-          Roll {roll.toFixed(1)}°
-        </Text>
-        <Text style={{ color: colors.textMuted, fontSize: Typography.xs, fontFamily: Typography.mono }}>
-          Pitch {pitch.toFixed(1)}°
-        </Text>
-        <Text style={{ color: colors.textMuted, fontSize: Typography.xs, fontFamily: Typography.mono }}>
-          Yaw {yaw.toFixed(1)}°
-        </Text>
-      </View>
-    </View>
-  )
-}
-
-function TelemetryCard({
+const TelemetryCard = memo(function TelemetryCard({
   title,
   value,
   subtitle,
@@ -366,7 +250,15 @@ function TelemetryCard({
         ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[motionStyles.telemetryCard, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}
+        style={[
+          motionStyles.telemetryCard,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.surfaceRaised,
+            borderTopColor: accent,
+            borderTopWidth: 2.5,
+          },
+        ]}
       >
         <View style={motionStyles.telemetryTopRow}>
           <View style={motionStyles.telemetryCopy}>
@@ -415,7 +307,7 @@ function TelemetryCard({
                     motionStyles.telemetryBar,
                     {
                       backgroundColor: isActive ? accent : ringTrack,
-                      opacity: isActive ? 1 : 0.45,
+                      opacity: isActive ? 1 : 0.35,
                       height: 9 + (index % 3) * 3,
                     },
                   ]}
@@ -427,7 +319,7 @@ function TelemetryCard({
       </LinearGradient>
     </View>
   )
-}
+})
 
 export default function DashboardScreen() {
   const { colors, isDark } = useTheme()
@@ -441,56 +333,92 @@ export default function DashboardScreen() {
 
   const hrHist = useRef<VitalPoint[]>([])
   const o2Hist = useRef<VitalPoint[]>([])
+  const stressHist = useRef<VitalPoint[]>([])
+  const tempHist = useRef<VitalPoint[]>([])
   const altHist = useRef<VitalPoint[]>([])
-  const [, forceUpdate] = useState(false)
+
+  // IMU-based vertical speed — integrated world-frame acceleration, used as fallback when GPS altitude is unavailable.
+  const imuVSpeedRef = useRef(0)
+  const lastImuTimeRef = useRef<number | null>(null)
 
   const sessionStart = useRef(Date.now())
   const prevConnected = useRef<string | null>(null)
 
-  const prevAlt = useRef<number | null>(null)
-  const prevAltTime = useRef(Date.now())
-  const [vertSpeed, setVertSpeed] = useState(0)
+  // Track previous values so we can update refs synchronously during render,
+  // avoiding a second forceUpdate render after each BLE packet or GPS tick.
+  const prevSlowPacketRef = useRef(slowPacket)
+  const prevLocationRef = useRef(location)
+
+  if (slowPacket !== prevSlowPacketRef.current) {
+    prevSlowPacketRef.current = slowPacket
+    if (slowPacket) {
+      hrHist.current = pushPoint(hrHist.current, slowPacket.bpm)
+      o2Hist.current = pushPoint(o2Hist.current, slowPacket.spo2)
+      stressHist.current = pushPoint(stressHist.current, slowPacket.stressPct)
+      tempHist.current = pushPoint(tempHist.current, slowPacket.tempC)
+
+      // Update IMU vertical speed using world-frame Z acceleration from the latest fast packet.
+      // Quaternion rotates body accel → world frame; subtract gravity, integrate with decay.
+      const fast = fastPacketRef.current
+      const nowMs = Date.now()
+      if (fast) {
+        const { quat0: qw, quat1: qx, quat2: qy, quat3: qz, accelX, accelY, accelZ } = fast
+        // World-frame Z: rotate body accel vector by quaternion
+        const worldZ = 2*(qx*qz - qw*qy)*accelX + 2*(qy*qz + qw*qx)*accelY + (1 - 2*(qx*qx + qy*qy))*accelZ
+        const vertAccelMs2 = (worldZ - 1.0) * 9.81  // subtract gravity, convert g → m/s²
+        if (lastImuTimeRef.current !== null) {
+          const dt = (nowMs - lastImuTimeRef.current) / 1000
+          if (dt > 0 && dt < 1.0) {
+            // Integrate with exponential decay (τ ≈ 0.5 s) to prevent unbounded drift
+            imuVSpeedRef.current = imuVSpeedRef.current * Math.exp(-dt / 0.5) + vertAccelMs2 * dt
+          }
+        }
+        lastImuTimeRef.current = nowMs
+      }
+    }
+  }
+
+  if (location !== prevLocationRef.current) {
+    prevLocationRef.current = location
+    if (location?.altitude !== null && location?.altitude !== undefined) {
+      altHist.current = pushPoint(altHist.current, location.altitude)
+    }
+  }
+
+  // GPS-based vertical speed (primary). Falls back to IMU integration when GPS altitude unavailable.
+  const vertSpeed: number | null = (() => {
+    const h = altHist.current
+    if (h.length >= 2) {
+      const last = h[h.length - 1]
+      const prev = h[h.length - 2]
+      const dt = (last.time - prev.time) / 1000
+      if (dt > 0.1) return (last.value - prev.value) / dt
+    }
+    // Fall back to IMU integration if the board is connected and has sent data
+    if (lastImuTimeRef.current !== null) return imuVSpeedRef.current
+    return null
+  })()
 
   useEffect(() => {
     if (connectedId && connectedId !== prevConnected.current) {
       sessionStart.current = Date.now()
       hrHist.current = []
       o2Hist.current = []
+      altHist.current = []
+      imuVSpeedRef.current = 0
+      lastImuTimeRef.current = null
     }
     prevConnected.current = connectedId
   }, [connectedId])
 
   useEffect(() => {
-    if (!slowPacket) return
-    hrHist.current = pushPoint(hrHist.current, slowPacket.bpm)
-    o2Hist.current = pushPoint(o2Hist.current, slowPacket.spo2)
-    forceUpdate(v => !v)
-  }, [slowPacket])
-
-  useEffect(() => {
     if (!location) return
-
     updatePhoneLocation({
       lat: location.latitude,
       lon: location.longitude,
       altitude: location.altitude,
       accuracy: location.accuracy,
     })
-
-    const alt = location.altitude
-    if (alt !== null) {
-      const now = Date.now()
-      if (prevAlt.current !== null) {
-        const dt = (now - prevAltTime.current) / 1000
-        if (dt > 0.1) {
-          setVertSpeed((alt - prevAlt.current) / dt)
-        }
-      }
-      prevAlt.current = alt
-      prevAltTime.current = now
-      altHist.current = pushPoint(altHist.current, alt)
-      forceUpdate(v => !v)
-    }
   }, [location, updatePhoneLocation])
 
   const isConnected = connectedId !== null
@@ -498,8 +426,8 @@ export default function DashboardScreen() {
   const status = deriveStatus(vertSpeed, altitude, fastPacket?.stationary ?? 1)
   const statusCfg = STATUS_CFG[status]
   const heroGradient = isDark
-    ? [statusCfg.color + '25', colors.surfaceRaised, colors.surface] as const
-    : [statusCfg.color + '16', '#FFFFFF', colors.surfaceRaised] as const
+    ? [statusCfg.color + '28', colors.surfaceRaised, colors.surface] as const
+    : [statusCfg.color + '18', '#FFFFFF', colors.surfaceRaised] as const
 
   const gForce = fastPacket
     ? Math.sqrt(fastPacket.accelX ** 2 + fastPacket.accelY ** 2 + fastPacket.accelZ ** 2)
@@ -509,6 +437,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <CockpitBackground />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -516,17 +445,22 @@ export default function DashboardScreen() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.appTitle}>SkyDiver</Text>
-            <Text style={styles.subTitle}>
-              {isConnected ? 'Device connected' : 'No device connected'}
-            </Text>
+          <View style={styles.headerLeft}>
+            <View style={[styles.logoMark, { backgroundColor: colors.primary + '1E', borderColor: colors.primary + '45' }]}>
+              <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.appTitle}>SkyDiver</Text>
+              <Text style={styles.subTitle}>
+                {isConnected ? 'Device connected' : 'No device connected'}
+              </Text>
+            </View>
           </View>
           <ConnectionBadge mode={mode} bleConnected={bleConnected} deviceRssi={deviceRssi} />
         </View>
 
         {/* ── Hero Altitude Card ── */}
-        <View style={[styles.heroCard, { borderColor: statusCfg.color + '35' }]}>
+        <View style={[styles.heroCard, { borderColor: statusCfg.color + '50' }]}>
           <LinearGradient
             colors={heroGradient}
             start={{ x: 0, y: 0 }}
@@ -535,15 +469,26 @@ export default function DashboardScreen() {
           />
 
           <View style={styles.heroTop}>
-            <View style={styles.statusPill}>
-              <View style={[styles.statusDot, { backgroundColor: statusCfg.color }]} />
+            <View style={[styles.statusPill, { borderColor: statusCfg.color + '40' }]}>
+              <MotiView
+                from={{ opacity: 1 }}
+                animate={statusCfg.pulse ? { opacity: 0.2 } : { opacity: 1 }}
+                transition={statusCfg.pulse
+                  ? { type: 'timing', duration: 800, loop: true, repeatReverse: true }
+                  : { type: 'timing', duration: 200 }
+                }
+                style={[styles.statusDot, { backgroundColor: statusCfg.color }]}
+              />
               <Text style={[styles.statusLabel, { color: statusCfg.color }]}>
                 {statusCfg.label}
               </Text>
             </View>
-            <Text style={styles.sessionTimer}>
-              {formatDuration(Date.now() - sessionStart.current)}
-            </Text>
+            <View style={[styles.timerChip, { backgroundColor: colors.surface + 'C0', borderColor: colors.border }]}>
+              <Ionicons name="time-outline" size={10} color={colors.textMuted} />
+              <Text style={styles.sessionTimer}>
+                {formatDuration(Date.now() - sessionStart.current)}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.altRow}>
@@ -554,11 +499,11 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.heroMeta}>
-            <View style={styles.metaChip}>
+            <View style={[styles.metaChip, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
               <Ionicons name="arrow-down" size={10} color={colors.textMuted} />
-              <Text style={styles.metaText}>{Math.abs(vertSpeed).toFixed(1)} m/s</Text>
+              <Text style={styles.metaText}>{vertSpeed !== null ? `${Math.abs(vertSpeed).toFixed(1)} m/s` : '— m/s'}</Text>
             </View>
-            <View style={styles.metaChip}>
+            <View style={[styles.metaChip, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
               <Ionicons name="location-outline" size={10} color={colors.textMuted} />
               <Text style={styles.metaText}>
                 {location
@@ -583,7 +528,7 @@ export default function DashboardScreen() {
 
         {/* ── Vitals section ── */}
         <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>Vitals</Text>
+          <SectionHeader title="Vitals" />
           {isConnected && (
             <View style={styles.liveChip}>
               <MotiView
@@ -607,6 +552,7 @@ export default function DashboardScreen() {
                 color={colors.heartRate}
                 warning={slowPacket.bpm > 160}
                 icon="heart-outline"
+                history={hrHist.current}
               >
                 <View style={styles.sparkInCard}>
                   <SparkLine
@@ -624,6 +570,7 @@ export default function DashboardScreen() {
                 color={colors.oxygen}
                 warning={slowPacket.spo2 < 93}
                 icon="water-outline"
+                history={o2Hist.current}
               >
                 <View style={styles.sparkInCard}>
                   <SparkLine
@@ -645,7 +592,17 @@ export default function DashboardScreen() {
                 warning={slowPacket.stressPct > 80}
                 icon="pulse-outline"
                 progress={slowPacket.stressPct}
-              />
+                history={stressHist.current}
+              >
+                <View style={styles.sparkInCard}>
+                  <SparkLine
+                    data={stressHist.current}
+                    color={slowPacket.stressPct > 80 ? colors.danger : colors.stress}
+                    width={sparkW}
+                    height={22}
+                  />
+                </View>
+              </MetricCard>
               <MetricCard
                 label="Temperature"
                 value={slowPacket.tempC.toFixed(1)}
@@ -653,7 +610,17 @@ export default function DashboardScreen() {
                 color={colors.temperature}
                 warning={slowPacket.tempC > 37.5}
                 icon="thermometer-outline"
-              />
+                history={tempHist.current}
+              >
+                <View style={styles.sparkInCard}>
+                  <SparkLine
+                    data={tempHist.current}
+                    color={slowPacket.tempC > 37.5 ? colors.danger : colors.temperature}
+                    width={sparkW}
+                    height={22}
+                  />
+                </View>
+              </MetricCard>
             </View>
 
             {gForce !== null && (
@@ -668,7 +635,7 @@ export default function DashboardScreen() {
                 />
                 <MetricCard
                   label="Vert Speed"
-                  value={Math.abs(vertSpeed).toFixed(1)}
+                  value={vertSpeed !== null ? Math.abs(vertSpeed).toFixed(1) : '—'}
                   unit="m/s"
                   color={colors.primary}
                   icon="arrow-down-outline"
@@ -677,95 +644,28 @@ export default function DashboardScreen() {
             )}
           </View>
         ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="bluetooth-outline" size={28} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No device connected</Text>
-            <Text style={styles.emptyBody}>
-              Connect a SkyWatch wearable to see live vitals
-            </Text>
-          </View>
+          <EmptyStatePanel
+            icon="bluetooth-outline"
+            title="No device connected"
+            body="Connect a SkyWatch wearable to see live vitals."
+          />
         )}
 
-        {/* ── IMU Section ── */}
-        {fastPacket && (
-          <View>
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>Motion · IMU</Text>
-              {fastPacket.stationary === 1 && (
-                <View style={styles.staticPill}>
-                  <Text style={styles.staticText}>Stationary</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.imuCard}>
-              <MotionCube
-                roll={fastPacket.rollDeg}
-                pitch={fastPacket.pitchDeg}
-                yaw={fastPacket.yawDeg}
-                colors={colors}
-              />
-
-              <View style={styles.imuDivider} />
-
-              <View style={styles.imuReadoutRow}>
-                <View style={styles.imuReadoutCell}>
-                  <Text style={styles.imuLabel}>Accel Vector</Text>
-                  <Text style={[styles.imuValue, { color: colors.oxygen }]}>
-                    {fastPacket.accelX.toFixed(2)} / {fastPacket.accelY.toFixed(2)} / {fastPacket.accelZ.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.imuReadoutCell}>
-                  <Text style={styles.imuLabel}>Gyro Vector</Text>
-                  <Text style={[styles.imuValue, { color: colors.stress }]}>
-                    {fastPacket.gyroX.toFixed(1)} / {fastPacket.gyroY.toFixed(1)} / {fastPacket.gyroZ.toFixed(1)}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ── Device ── */}
         {slowPacket && (
           <View>
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>Device Telemetry</Text>
-              <Text style={styles.sectionHint}>Battery and compute load</Text>
-            </View>
-
-            <View style={styles.deviceGrid}>
-              <TelemetryCard
-                title="Battery"
-                value={`${Math.round(slowPacket.battPct)}%`}
-                subtitle={`${slowPacket.voltageV.toFixed(2)} V · ${slowPacket.currentMA} mA`}
-                accent={slowPacket.battPct > 20 ? colors.battery : colors.danger}
-                colors={colors}
-                ringValue={slowPacket.battPct}
-                ringLabel={slowPacket.battPct > 20 ? 'OK' : 'LOW'}
-                ringTrack={colors.border}
-                chipA={{ label: 'Voltage', value: `${slowPacket.voltageV.toFixed(2)} V` }}
-                chipB={{ label: 'Current', value: `${slowPacket.currentMA} mA` }}
-                barLabel="Charge"
-                barValue={slowPacket.battPct}
-                isCritical={slowPacket.battPct <= 20}
-              />
-
-              <TelemetryCard
-                title="CPU Load"
-                value={`${Math.round(slowPacket.cpuPct)}%`}
-                subtitle="Realtime compute usage"
-                accent={slowPacket.cpuPct < 75 ? colors.primary : colors.warning}
-                colors={colors}
-                ringValue={slowPacket.cpuPct}
-                ringLabel={slowPacket.cpuPct < 75 ? 'STABLE' : 'HOT'}
-                ringTrack={colors.border}
-                chipA={{label:'Load',value: `${Math.round(slowPacket.cpuPct)}%`}}
-                chipB={{label:'Seq', value: '#' + slowPacket.seq}}
-                barLabel="Utilization"
-                barValue={slowPacket.cpuPct}
-                isCritical={slowPacket.cpuPct >= 75}
-              />
+            <SectionHeader title="System Strip" hint="Battery · Voltage · CPU · Temp" />
+            <View style={styles.systemStrip}>
+              {[
+                { label: 'Battery', value: `${Math.round(slowPacket.battPct)}%`, color: slowPacket.battPct <= 20 ? colors.danger : colors.battery },
+                { label: 'Voltage', value: `${slowPacket.voltageV.toFixed(2)} V`, color: colors.textPrimary },
+                { label: 'CPU', value: `${Math.round(slowPacket.cpuPct)}%`, color: slowPacket.cpuPct > 80 ? colors.warning : colors.textPrimary },
+                { label: 'Temp', value: `${slowPacket.tempC.toFixed(1)} °C`, color: slowPacket.tempC > 37.5 ? colors.danger : colors.temperature },
+              ].map(item => (
+                <View key={item.label} style={[styles.systemChip, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
+                  <Text style={[styles.systemLabel, { color: colors.textMuted }]}>{item.label}</Text>
+                  <Text style={[styles.systemValue, { color: item.color }]}>{item.value}</Text>
+                </View>
+              ))}
             </View>
           </View>
         )}
@@ -787,23 +687,37 @@ function makeStyles(colors: AppColors) {
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: Spacing.md,
+      paddingTop: 4,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    logoMark: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     appTitle: {
       fontSize: Typography.lg,
       fontWeight: Typography.bold,
       color: colors.textPrimary,
-      letterSpacing: 0.5,
+      letterSpacing: -0.3,
     },
     subTitle: {
       fontSize: Typography.xs,
       color: colors.textMuted,
-      marginTop: 2,
+      marginTop: 1,
     },
 
     heroCard: {
-      borderRadius: Radius.lg,
+      borderRadius: Radius.xl,
       borderWidth: 1,
-      padding: Spacing.md,
+      padding: Spacing.lg,
       marginBottom: Spacing.md,
       overflow: 'hidden',
       position: 'relative',
@@ -820,17 +734,27 @@ function makeStyles(colors: AppColors) {
     statusPill: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
+      gap: 7,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
       borderRadius: Radius.full,
-      backgroundColor: colors.surface + 'C0',
+      backgroundColor: colors.surface + 'D0',
+      borderWidth: 1,
     },
-    statusDot: { width: 6, height: 6, borderRadius: 3 },
+    statusDot: { width: 7, height: 7, borderRadius: 4 },
     statusLabel: {
       fontSize: Typography.xs,
       fontWeight: Typography.bold,
       letterSpacing: 1.5,
+    },
+    timerChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: Radius.full,
+      borderWidth: 1,
     },
     sessionTimer: {
       fontSize: Typography.xs,
@@ -842,28 +766,37 @@ function makeStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'flex-end',
       gap: 6,
-      marginBottom: Spacing.xs,
+      marginBottom: Spacing.sm,
     },
     altValue: {
-      fontSize: 56,
+      fontSize: 62,
       fontWeight: Typography.bold,
       fontFamily: Typography.mono,
       fontVariant: ['tabular-nums'],
-      lineHeight: 60,
+      lineHeight: 66,
     },
     altUnit: {
-      fontSize: Typography.lg,
+      fontSize: Typography.xl,
       marginBottom: 8,
       fontFamily: Typography.mono,
+      fontWeight: Typography.medium,
     },
 
     heroMeta: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: Spacing.md,
+      gap: Spacing.sm,
       marginBottom: Spacing.xs,
     },
-    metaChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    metaChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+    },
     metaText: {
       fontSize: Typography.xs,
       color: colors.textMuted,
@@ -876,19 +809,8 @@ function makeStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: Spacing.sm,
-      marginTop: 2,
-    },
-    sectionTitle: {
-      fontSize: Typography.xs,
-      fontWeight: Typography.semibold,
-      color: colors.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 1.2,
-    },
-    sectionHint: {
-      fontSize: Typography.xs,
-      color: colors.textMuted,
+      marginBottom: 2,
+      marginTop: Spacing.sm,
     },
     liveChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     liveDot: { width: 6, height: 6, borderRadius: 3 },
@@ -900,154 +822,31 @@ function makeStyles(colors: AppColors) {
       marginBottom: Spacing.sm,
     },
 
-    deviceGrid: {
-      flexDirection: 'column',
+    systemStrip: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: Spacing.sm,
       marginBottom: Spacing.md,
     },
-
-    sparkInCard: { marginTop: Spacing.sm },
-
-    emptyCard: {
-      backgroundColor: colors.surfaceRaised,
+    systemChip: {
+      flexBasis: '48%',
+      borderWidth: 1,
       borderRadius: Radius.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.xl,
-      alignItems: 'center',
-      gap: Spacing.sm,
-      marginBottom: Spacing.md,
+      padding: Spacing.sm,
+      gap: 4,
     },
-    emptyTitle: {
-      fontSize: Typography.base,
-      color: colors.textSecondary,
-      fontWeight: Typography.semibold,
-    },
-    emptyBody: {
-      fontSize: Typography.sm,
-      color: colors.textMuted,
-      textAlign: 'center',
-      lineHeight: Typography.sm * 1.6,
-    },
-
-    staticPill: {
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: Radius.full,
-      backgroundColor: colors.border,
-    },
-    staticText: { fontSize: Typography.xs, color: colors.textMuted },
-
-    imuCard: {
-      backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.md,
-      marginBottom: Spacing.md,
-    },
-    imuReadoutRow: {
-      flexDirection: 'row',
-      gap: Spacing.sm,
-    },
-    imuReadoutCell: {
-      flex: 1,
-      paddingHorizontal: Spacing.sm,
-      paddingVertical: Spacing.xs,
-      borderRadius: Radius.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    imuLabel: { fontSize: Typography.xs, color: colors.textMuted, marginBottom: 3 },
-    imuValue: {
-      fontSize: Typography.sm,
-      fontWeight: Typography.semibold,
-      fontFamily: Typography.mono,
-      fontVariant: ['tabular-nums'],
-    },
-    imuDivider: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: Spacing.sm,
-    },
-
-    deviceRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
-
-    battCard: {
-      flex: 1,
-      backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.md,
-    },
-    gaugeHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-      marginBottom: Spacing.sm,
-    },
-    gaugeWrap: {
-      width: 66,
-      height: 66,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    gaugeValue: {
-      position: 'absolute',
+    systemLabel: {
       fontSize: Typography.xs,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      fontWeight: Typography.semibold,
+    },
+    systemValue: {
+      fontSize: Typography.base,
       fontWeight: Typography.bold,
       fontFamily: Typography.mono,
     },
-    gaugeMeta: {
-      flex: 1,
-      gap: 2,
-    },
-    gaugeTitle: {
-      fontSize: Typography.sm,
-      color: colors.textPrimary,
-      fontWeight: Typography.semibold,
-    },
-    gaugeSub: {
-      fontSize: Typography.xs,
-      color: colors.textMuted,
-      fontFamily: Typography.mono,
-    },
-    deviceMetaRow: {
-      flexDirection: 'row',
-      gap: Spacing.xs,
-    },
-    deviceChip: {
-      flex: 1,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: Radius.sm,
-      paddingVertical: 6,
-      paddingHorizontal: 8,
-      gap: 2,
-    },
-    deviceChipLabel: {
-      fontSize: Typography.xs,
-      textTransform: 'uppercase',
-      color: colors.textMuted,
-      letterSpacing: 0.6,
-    },
-    deviceChipValue: {
-      fontSize: Typography.sm,
-      color: colors.textPrimary,
-      fontFamily: Typography.mono,
-      fontWeight: Typography.semibold,
-    },
 
-    sysCard: {
-      flex: 1,
-      backgroundColor: colors.surfaceRaised,
-      borderRadius: Radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.md,
-    },
+    sparkInCard: { marginTop: Spacing.sm },
   })
 }

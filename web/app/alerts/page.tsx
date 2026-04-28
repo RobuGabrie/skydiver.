@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { useSkydiversData } from "@/hooks/use-skydivers-data"
+import { useSkydiversData } from "@/lib/skydivers-context"
+import { useAlertRules } from "@/hooks/use-alert-rules"
 import { Alert, AlertSeverity } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { formatDistanceToNow, format } from "date-fns"
 import {
   Bell, CheckCircle2, AlertTriangle, XCircle, Info,
-  Phone, Radio, Users, Zap, Clock,
+  Phone, Radio, Users, Zap, Clock, RotateCcw,
 } from "lucide-react"
 
 const SEVERITY_CONFIG = {
@@ -39,24 +40,23 @@ const SEVERITY_CONFIG = {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  uncontrolled_fall: "Uncontrolled Fall",
+  uncontrolled_fall:  "Uncontrolled Fall",
   excessive_rotation: "Excessive Rotation",
-  no_movement: "No Movement (Unconsciousness)",
-  abnormal_pulse: "Abnormal Heart Rate",
-  high_stress: "High Stress Level",
-  low_oxygen: "Low Blood Oxygen",
-  high_temp: "Elevated Temperature",
-  low_battery: "Low Battery",
-  parachute_open: "Parachute Status",
-  position_change: "Position Change",
-  accident_risk: "Accident Risk Prediction",
-  abnormal_behavior: "Abnormal Air Behavior",
+  no_movement:        "No Movement (Unconsciousness)",
+  abnormal_pulse:     "Abnormal Heart Rate",
+  high_stress:        "High Stress Level",
+  low_oxygen:         "Low Blood Oxygen",
+  high_temp:          "Elevated Temperature",
+  low_battery:        "Low Battery",
+  parachute_open:     "Parachute Status",
+  position_change:    "Position Change",
+  accident_risk:      "Accident Risk Prediction",
+  abnormal_behavior:  "Abnormal Air Behavior",
 }
 
 function AlertRow({ alert, onAck }: { alert: Alert; onAck: (id: string) => void }) {
-  const cfg = SEVERITY_CONFIG[alert.severity]
+  const cfg  = SEVERITY_CONFIG[alert.severity]
   const Icon = cfg.icon
-
   return (
     <div className={cn(
       "flex gap-4 p-4 rounded-xl border transition-all duration-200",
@@ -66,16 +66,11 @@ function AlertRow({ alert, onAck }: { alert: Alert; onAck: (id: string) => void 
       <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-background/40">
         <Icon className={cn("w-5 h-5", cfg.color)} />
       </div>
-
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1.5">
           <span className="text-base font-semibold text-foreground">{alert.skydiverName}</span>
-          <Badge variant="outline" className={cn("text-xs font-mono", cfg.badge)}>
-            {cfg.label}
-          </Badge>
-          <Badge variant="secondary" className="text-xs">
-            {TYPE_LABELS[alert.type] || alert.type}
-          </Badge>
+          <Badge variant="outline" className={cn("text-xs font-mono", cfg.badge)}>{cfg.label}</Badge>
+          <Badge variant="secondary" className="text-xs">{TYPE_LABELS[alert.type] || alert.type}</Badge>
         </div>
         <p className="text-sm text-foreground/80 mb-1.5">{alert.message}</p>
         {alert.value !== undefined && (
@@ -91,15 +86,9 @@ function AlertRow({ alert, onAck }: { alert: Alert; onAck: (id: string) => void 
           </span>
         </div>
       </div>
-
       <div className="flex flex-col items-end gap-2 shrink-0">
         {!alert.acknowledged ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-sm px-3 cursor-pointer border-border"
-            onClick={() => onAck(alert.id)}
-          >
+          <Button size="sm" variant="outline" className="h-8 text-sm px-3 cursor-pointer border-border" onClick={() => onAck(alert.id)}>
             Acknowledge
           </Button>
         ) : (
@@ -113,14 +102,80 @@ function AlertRow({ alert, onAck }: { alert: Alert; onAck: (id: string) => void 
   )
 }
 
+// Inline threshold editor
+function RuleRow({ rule, onToggle, onThreshold }: {
+  rule: ReturnType<typeof useAlertRules>["rules"][0]
+  onToggle: (id: string) => void
+  onThreshold: (id: string, v: number) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft]     = useState(String(rule.threshold ?? ""))
+
+  const severityDot =
+    rule.severity === "critical" ? "bg-red-500" :
+    rule.severity === "warning"  ? "bg-amber-500" : "bg-blue-500"
+
+  function commitEdit() {
+    const n = Number(draft)
+    if (!isNaN(n) && n > 0) onThreshold(rule.id, n)
+    setEditing(false)
+  }
+
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <div className={cn("w-2 h-2 rounded-full shrink-0", severityDot)} />
+      <span className={cn("text-sm flex-1", !rule.active && "line-through text-muted-foreground/50")}>
+        {rule.label}
+        {rule.threshold !== undefined && (
+          <> {editing ? (
+            <input
+              autoFocus
+              type="number"
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={e => { if (e.key === "Enter") commitEdit() }}
+              className="ml-1 w-16 px-1 py-0 text-xs border border-primary/40 rounded bg-background text-foreground font-mono focus:outline-none"
+            />
+          ) : (
+            <button
+              onClick={() => { setDraft(String(rule.threshold)); setEditing(true) }}
+              className="ml-1 text-primary underline-offset-2 hover:underline cursor-pointer font-mono text-xs"
+              aria-label={`Edit threshold for ${rule.label}`}
+            >
+              {rule.threshold}
+            </button>
+          )} <span className="text-muted-foreground text-xs">{rule.unit}</span></>
+        )}
+      </span>
+      {/* Toggle switch */}
+      <button
+        role="switch"
+        aria-checked={rule.active}
+        onClick={() => onToggle(rule.id)}
+        className={cn(
+          "relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-ring",
+          rule.active ? "bg-emerald-500" : "bg-muted"
+        )}
+      >
+        <span className={cn(
+          "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200",
+          rule.active ? "left-4" : "left-0.5"
+        )} />
+      </button>
+    </div>
+  )
+}
+
 export default function AlertsPage() {
   const { alerts, unacknowledgedAlerts, criticalAlerts, acknowledgeAlert, acknowledgeAll } = useSkydiversData()
+  const { rules, toggle, setThreshold, reset } = useAlertRules()
   const [filter, setFilter] = useState<"all" | AlertSeverity>("all")
 
-  const filtered = filter === "all" ? alerts : alerts.filter(a => a.severity === filter)
-  const critCount = alerts.filter(a => a.severity === "critical").length
-  const warnCount = alerts.filter(a => a.severity === "warning").length
-  const infoCount = alerts.filter(a => a.severity === "info").length
+  const filtered   = filter === "all" ? alerts : alerts.filter(a => a.severity === filter)
+  const critCount  = alerts.filter(a => a.severity === "critical").length
+  const warnCount  = alerts.filter(a => a.severity === "warning").length
+  const infoCount  = alerts.filter(a => a.severity === "info").length
 
   return (
     <div className="p-6 min-h-screen">
@@ -168,7 +223,6 @@ export default function AlertsPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Alert list */}
         <div className="xl:col-span-2 space-y-4">
-          {/* Filter tabs */}
           <div className="flex gap-2 mb-4">
             {(["all", "critical", "warning", "info"] as const).map(f => (
               <button
@@ -205,40 +259,42 @@ export default function AlertsPage() {
 
         {/* Right panel */}
         <div className="space-y-4">
+          {/* Configurable alert rules */}
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-medium flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" />
-                Auto-Alert Configuration
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-medium flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-primary" />
+                  Alert Rules
+                </CardTitle>
+                <button
+                  onClick={reset}
+                  title="Reset to defaults"
+                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </CardHeader>
-            <CardContent className="pb-4 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Automatic alerts are sent to instructors and team when thresholds are exceeded.
+            <CardContent className="pb-4">
+              <p className="text-sm text-muted-foreground mb-3">
+                Toggle rules and tap the threshold value to edit it.
               </p>
-              <Separator />
-              {[
-                { label: "Parachute not deployed < 800m", active: true, severity: "critical" },
-                { label: "O₂ saturation < 93%",          active: true, severity: "warning"  },
-                { label: "Heart rate > 160 bpm",          active: true, severity: "warning"  },
-                { label: "Stress level > 75%",            active: true, severity: "critical" },
-                { label: "Rotation > 180°/s",             active: true, severity: "critical" },
-                { label: "No movement > 10s",             active: true, severity: "critical" },
-                { label: "Battery < 20%",                 active: true, severity: "info"     },
-                { label: "Vertical speed > 65 m/s",       active: true, severity: "warning"  },
-              ].map(rule => (
-                <div key={rule.label} className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-2 h-2 rounded-full shrink-0",
-                    rule.severity === "critical" ? "bg-red-500" : rule.severity === "warning" ? "bg-amber-500" : "bg-blue-500"
-                  )} />
-                  <span className="text-sm text-muted-foreground flex-1">{rule.label}</span>
-                  <div className={cn("w-8 h-4 rounded-full", rule.active ? "bg-emerald-500/50" : "bg-muted")} />
-                </div>
-              ))}
+              <Separator className="mb-3" />
+              <div className="space-y-0.5">
+                {rules.map(rule => (
+                  <RuleRow
+                    key={rule.id}
+                    rule={rule}
+                    onToggle={toggle}
+                    onThreshold={setThreshold}
+                  />
+                ))}
+              </div>
             </CardContent>
           </Card>
 
+          {/* Notification targets */}
           <Card className="bg-card border-border">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-medium flex items-center gap-2">
@@ -248,9 +304,9 @@ export default function AlertsPage() {
             </CardHeader>
             <CardContent className="pb-4 space-y-3">
               {[
-                { icon: Users, label: "Jump Instructor", detail: "Instructor Viorel D.", active: true },
-                { icon: Phone, label: "Emergency Contact", detail: "+40 721 234 567",    active: true },
-                { icon: Radio, label: "Ground Team",       detail: "5 members",          active: true },
+                { icon: Users, label: "Jump Instructor",  detail: "Instructor Viorel D.",  active: true },
+                { icon: Phone, label: "Emergency Contact", detail: "+40 721 234 567",       active: true },
+                { icon: Radio, label: "Ground Team",       detail: "5 members",             active: true },
               ].map(target => (
                 <div key={target.label} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/50">
                   <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">

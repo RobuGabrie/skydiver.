@@ -1,4 +1,4 @@
-import { Skydiver, Alert, SessionStats, VitalPoint, AltitudePoint } from "./types"
+import { Skydiver, Alert, SessionStats, VitalPoint, AltitudePoint, PhaseEvent } from "./types"
 
 function generateVitalHistory(base: { hr: number; o2: number; stress: number; temp: number }, points = 30): VitalPoint[] {
   const now = Date.now()
@@ -26,6 +26,24 @@ function generateAltitudeHistory(currentAlt: number, points = 30): AltitudePoint
   })
 }
 
+function generatePhaseHistory(status: Skydiver["status"]): PhaseEvent[] {
+  const now = Date.now()
+  const phases: PhaseEvent[] = [
+    { status: "standby",  enteredAt: new Date(now - 12 * 60000).toISOString() },
+    { status: "freefall", enteredAt: new Date(now - 8  * 60000).toISOString() },
+  ]
+  if (status === "canopy_open" || status === "landed") {
+    phases.push({ status: "canopy_open", enteredAt: new Date(now - 5 * 60000).toISOString() })
+  }
+  if (status === "landed") {
+    phases.push({ status: "landed", enteredAt: new Date(now - 60000).toISOString() })
+  }
+  if (status === "alert") {
+    phases.push({ status: "alert", enteredAt: new Date(now - 2 * 60000).toISOString() })
+  }
+  return phases
+}
+
 // 3 validated mock users covering the full range of app scenarios:
 //   Alex Mercer   — active freefall, normal-high vitals (baseline monitoring)
 //   Sara Ionescu  — canopy open, calm vitals (post-deployment descent)
@@ -49,8 +67,11 @@ export const MOCK_SKYDIVERS: Skydiver[] = [
     lastUpdate: new Date(),
     vitalHistory: generateVitalHistory({ hr: 142, o2: 96, stress: 72, temp: 36.8 }),
     altitudeHistory: generateAltitudeHistory(3200),
+    phaseHistory: generatePhaseHistory("freefall"),
     riskScore: 18,
     connectedVia: "wifi",
+    lat: 46.5672,
+    lon: 26.9148,
   },
   {
     id: "2",
@@ -70,8 +91,11 @@ export const MOCK_SKYDIVERS: Skydiver[] = [
     lastUpdate: new Date(),
     vitalHistory: generateVitalHistory({ hr: 98, o2: 98, stress: 35, temp: 36.5 }),
     altitudeHistory: generateAltitudeHistory(1200),
+    phaseHistory: generatePhaseHistory("canopy_open"),
     riskScore: 5,
     connectedVia: "wifi",
+    lat: 46.5648,
+    lon: 26.9171,
   },
   {
     id: "3",
@@ -91,8 +115,11 @@ export const MOCK_SKYDIVERS: Skydiver[] = [
     lastUpdate: new Date(),
     vitalHistory: generateVitalHistory({ hr: 168, o2: 91, stress: 89, temp: 37.4 }),
     altitudeHistory: generateAltitudeHistory(2800),
+    phaseHistory: generatePhaseHistory("alert"),
     riskScore: 74,
     connectedVia: "wifi",
+    lat: 46.5659,
+    lon: 26.9135,
   },
   {
     id: "4",
@@ -112,8 +139,11 @@ export const MOCK_SKYDIVERS: Skydiver[] = [
     lastUpdate: new Date(Date.now() - 4 * 60 * 1000),
     vitalHistory: generateVitalHistory({ hr: 134, o2: 95, stress: 61, temp: 36.9 }),
     altitudeHistory: generateAltitudeHistory(3800),
+    phaseHistory: generatePhaseHistory("freefall"),
     riskScore: 12,
     connectedVia: "offline",
+    lat: 46.5681,
+    lon: 26.9162,
   },
 ]
 

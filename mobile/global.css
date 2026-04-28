@@ -4,26 +4,25 @@
 
 @layer base {
   :root {
-    /* Skydiver dark theme — OLED-first */
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-    --card: 240 3.7% 11%;
-    --card-foreground: 0 0% 100%;
-    --popover: 240 3.7% 11%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 211 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 3.7% 17%;
-    --secondary-foreground: 0 0% 90%;
-    --muted: 240 3.7% 17%;
-    --muted-foreground: 240 5% 55%;
-    --accent: 211 100% 50%;
+    --background: 220 50% 7%;
+    --foreground: 205 92% 96%;
+    --card: 217 43% 14%;
+    --card-foreground: 205 92% 96%;
+    --popover: 217 43% 14%;
+    --popover-foreground: 205 92% 96%;
+    --primary: 199 94% 74%;
+    --primary-foreground: 220 45% 14%;
+    --secondary: 214 39% 19%;
+    --secondary-foreground: 205 80% 92%;
+    --muted: 214 39% 19%;
+    --muted-foreground: 211 33% 60%;
+    --accent: 216 91% 68%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 3.1 100% 59.8%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 3.7% 20%;
-    --input: 240 3.7% 20%;
-    --ring: 211 100% 50%;
+    --border: 215 36% 26%;
+    --input: 215 36% 26%;
+    --ring: 199 94% 74%;
     --radius: 0.75rem;
   }
 }
